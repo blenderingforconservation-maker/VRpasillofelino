@@ -1,13 +1,19 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Experiencia Quest 3 - VR & Mixed Reality</title>
-  <style>
-    body { margin: 0; background-color: #111; color: #fff; font-family: sans-serif; overflow: hidden; }
-    #info { position: absolute; top: 16px; width: 100%; text-align: center; z-index: 10; pointer-events: none; }
-  </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Pasillo Felino VR/AR · Museo Leonora Carrington</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Tipografías Curatoriales -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+  <!-- Importmap Oficial Three.js r160 -->
   <script type="importmap">
     {
       "imports": {
@@ -16,95 +22,1018 @@
       }
     }
   </script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100dvh;
+      overflow: hidden;
+      background-color: #050a08;
+      font-family: 'Inter', sans-serif;
+      touch-action: none;
+    }
+
+    .font-museum {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+    }
+
+    #webgl-viewport {
+      position: fixed;
+      inset: 0;
+      z-index: 2;
+      cursor: grab;
+    }
+
+    #webgl-viewport:active {
+      cursor: grabbing;
+    }
+
+    #hud-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      pointer-events: none;
+      display: none;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: env(safe-area-inset-top, 14px) env(safe-area-inset-right, 16px) env(safe-area-inset-bottom, 18px) env(safe-area-inset-left, 16px);
+    }
+
+    #hud-overlay.active {
+      display: flex;
+    }
+
+    .interactive {
+      pointer-events: auto;
+    }
+
+    .magic-btn {
+      background: radial-gradient(circle at 50% 0%, rgba(163, 230, 53, 0.28), rgba(6, 28, 20, 0.90) 75%);
+      border: 1px solid rgba(190, 242, 100, 0.45);
+      box-shadow: 0 0 20px rgba(132, 204, 22, 0.25), inset 0 1px 1px rgba(254, 240, 138, 0.35);
+      transition: transform 0.12s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .magic-btn:active, .magic-btn.pressing {
+      transform: scale(0.94);
+      border-color: rgba(253, 224, 71, 0.95);
+      box-shadow: 0 0 28px rgba(250, 204, 21, 0.55), inset 0 0 12px rgba(163, 230, 53, 0.45);
+    }
+
+    .magic-cta {
+      background: linear-gradient(135deg, #22c55e 0%, #a3e635 50%, #facc15 100%);
+      box-shadow: 0 0 30px rgba(163, 230, 53, 0.55), 0 0 60px rgba(250, 204, 21, 0.25);
+      transition: transform 0.15s ease, box-shadow 0.2s ease;
+    }
+
+    .magic-cta:active {
+      transform: scale(0.95);
+    }
+
+    #toast-banner {
+      position: fixed;
+      top: 72px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 8px 20px;
+      background: rgba(5, 14, 10, 0.92);
+      border: 1px solid rgba(163, 230, 53, 0.45);
+      border-radius: 999px;
+      color: #ecfccb;
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.03em;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+      pointer-events: none;
+      text-align: center;
+      white-space: nowrap;
+      z-index: 30;
+    }
+  </style>
 </head>
 <body>
-  <div id="info">Abre esta página en Meta Quest Browser y pulsa ENTER VR o START AR</div>
+
+  <!-- Lienzo 3D Three.js -->
+  <div id="webgl-viewport"></div>
+
+  <!-- Notificación flotante -->
+  <div id="toast-banner">Cargando sala inmersiva...</div>
+
+  <!-- PANTALLA DE CARGA -->
+  <div id="loading-modal" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-stone-950/95 backdrop-blur-md px-6 text-center transition-opacity duration-500">
+    <div class="w-14 h-14 mb-4 rounded-full bg-emerald-500/10 border border-lime-300/40 flex items-center justify-center shadow-[0_0_30px_rgba(132,204,22,0.25)]">
+      <div class="w-3.5 h-3.5 rounded-full bg-yellow-300 animate-ping"></div>
+    </div>
+
+    <span class="text-[10px] uppercase tracking-[0.3em] text-lime-300/90 font-semibold mb-1">
+      Meta Quest 3 · WebXR Inmersivo
+    </span>
+    <h1 class="font-museum text-3xl sm:text-4xl text-stone-100 tracking-wide mb-2">
+      Pasillo Leonora Carrington
+    </h1>
+    <p id="loading-message" class="text-xs text-stone-400 max-w-xs mb-6 leading-relaxed">
+      Decodificando arquitectura, roca y escultura monumental...
+    </p>
+
+    <div id="progress-container" class="w-64 flex flex-col items-center mb-5">
+      <div class="w-full h-1.5 bg-stone-800 rounded-full overflow-hidden">
+        <div id="progress-bar" class="h-full bg-gradient-to-r from-emerald-500 via-lime-400 to-yellow-300 w-0 transition-all duration-200"></div>
+      </div>
+      <span id="progress-text" class="text-[10px] font-mono text-lime-300/80 mt-2">0%</span>
+    </div>
+
+    <div id="launch-controls" class="hidden flex-col gap-3 w-full max-w-xs">
+      <button id="btn-start-preview" class="magic-cta w-full py-4 px-7 rounded-full text-stone-950 font-extrabold text-xs uppercase tracking-widest flex items-center justify-center gap-2">
+        <span>Explorar Sala Ahora</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- INTERFAZ DE CONTROL Y LANZAMIENTO VR / AR -->
+  <div id="hud-overlay">
+    <!-- Barra Superior -->
+    <header class="w-full flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-2.5 bg-stone-950/85 border border-lime-400/35 rounded-full px-4 py-2 shadow-lg">
+        <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-lime-400 animate-pulse"></span>
+        <span id="status-text" class="text-[11px] font-medium text-stone-100">
+          Sala activa · Usa Ratón/WASD o entra en Meta Quest 3
+        </span>
+      </div>
+
+      <div class="interactive flex items-center gap-2">
+        <button id="btn-replay-magic" class="px-3.5 py-2 rounded-full bg-stone-950/85 border border-yellow-300/40 text-yellow-200 text-[11px] font-medium active:scale-95 transition-transform">
+          ✨ Materializar Hojas
+        </button>
+      </div>
+    </header>
+
+    <!-- Controles Inferiores: Botones Meta Quest 3 (VR y AR) + Caminata -->
+    <footer class="w-full flex flex-col items-center gap-3">
+      <!-- Botones Directos para Meta Quest 3 -->
+      <div class="interactive flex flex-wrap items-center justify-center gap-2.5 w-full max-w-md">
+        <button id="btn-enter-vr" class="magic-cta flex-1 min-w-[165px] py-3.5 px-5 rounded-full text-stone-950 font-extrabold text-xs uppercase tracking-wider flex items-center justify-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+          </svg>
+          <span>Entrar en VR (Quest 3)</span>
+        </button>
+
+        <button id="btn-enter-ar" class="magic-btn flex-1 min-w-[165px] py-3.5 px-5 rounded-full text-lime-200 font-semibold text-xs uppercase tracking-wider flex items-center justify-center gap-2">
+          <span>Modo AR (Passthrough)</span>
+        </button>
+      </div>
+
+      <!-- Consola de Caminata -->
+      <div class="interactive flex items-center justify-center gap-3 w-full max-w-sm">
+        <button id="btn-step-back" class="magic-btn flex-1 py-3 px-4 rounded-2xl flex items-center justify-center gap-2 text-lime-100 text-xs font-semibold tracking-wider uppercase">
+          <span>↓ Atrás</span>
+        </button>
+
+        <button id="btn-reset-walk" title="Volver a la entrada" class="px-4 py-2 rounded-2xl bg-stone-950/90 border border-yellow-300/40 flex flex-col items-center justify-center min-w-[92px] shadow-inner active:scale-95 transition-transform">
+          <span class="text-[9px] uppercase tracking-widest text-lime-300/80">Recorrido</span>
+          <span id="distance-readout" class="text-sm font-mono font-bold text-yellow-300">0.0 m</span>
+        </button>
+
+        <button id="btn-step-forward" class="magic-btn flex-1 py-3 px-4 rounded-2xl flex items-center justify-center gap-2 text-yellow-200 text-xs font-semibold tracking-wider uppercase">
+          <span>Avanzar ↑</span>
+        </button>
+      </div>
+    </footer>
+  </div>
 
   <script type="module">
     import * as THREE from 'three';
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
     import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-    import { VRButton } from 'three/addons/webxr/VRButton.js';
-    import { ARButton } from 'three/addons/webxr/ARButton.js';
+    import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 
-    // 1. Escena, Cámara y Renderizador con canal Alfa (para permitir AR Passthrough en Quest 3)
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 100);
-    camera.position.set(0, 1.6, 2.5); // 1.6m = altura promedio de los ojos humanos
+    const REPO_RAW_BASE = 'https://raw.githubusercontent.com/blenderingforconservation-maker/recorridovirtual_Leonora/main/';
+    const MODELS = {
+      corridor: `${REPO_RAW_BASE}models/pasillo_optimizado.glb`,
+      rock: `${REPO_RAW_BASE}models/rock.glb`,
+      sculpture: `${REPO_RAW_BASE}models/3DModel.glb`
+    };
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.xr.enabled = true; // Activa el motor WebXR para Meta Quest 3
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.1;
-    document.body.appendChild(renderer.domElement);
+    let scene, camera, renderer, gltfLoader;
+    let hallAnchorGroup, walkStageGroup, interiorGroup;
+    let clippingPlane, leafParticles, leafMaterial, magicWaveRing, magicWaveLight;
 
-    // 2. Botones nativos para entrar en VR (escenario cerrado) o AR (Passthrough a color)
-    const vrBtn = VRButton.createButton(renderer);
-    vrBtn.style.left = 'calc(50% - 170px)';
-    document.body.appendChild(vrBtn);
+    const controllers = [];
 
-    const arBtn = ARButton.createButton(renderer, { requiredFeatures: ['local-floor'] });
-    arBtn.style.left = 'calc(50% + 20px)';
-    document.body.appendChild(arBtn);
+    // Estados de la experiencia
+    let isMaterializing = false;
+    let materializationT = 0;
+    let maxRevealHeight = 10.8;
+    let totalCorridorLength = 14.0;
+    let lastFrameTime = performance.now();
 
-    // 3. Iluminación optimizada (Cero sombras dinámicas costosas)
-    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444455, 1.8);
-    hemiLight.position.set(0, 10, 0);
-    scene.add(hemiLight);
+    // Locomoción (Teclado, Botones y Joysticks de Quest 3)
+    const targetWalkOffset = new THREE.Vector3(0, 0, 0);
+    const currentWalkOffset = new THREE.Vector3(0, 0, 0);
+    let moveButtonDir = 0;
+    let buttonCooldown = 0;
+    const keysPressed = { forward: false, back: false, left: false, right: false };
 
-    const dirLight = new THREE.DirectionalLight(0xfff5e6, 1.5);
-    dirLight.position.set(3, 6, 4);
-    scene.add(dirLight);
+    // Control de Mirada con Ratón / Touch en pantalla 2D
+    let isPointerDown = false;
+    let prevPointerX = 0;
+    let prevPointerY = 0;
+    let yaw = 0;
+    let pitch = 0;
 
-    // 4. Cargador GLTF + Soporte Draco por si exportaste comprimido desde Blender
-    const dracoLoader = new DRACOLoader();
-    dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
-    const loader = new GLTFLoader();
-    loader.setDRACOLoader(dracoLoader);
+    // Vectores reutilizables
+    const _rayDir = new THREE.Vector3();
+    const _horizDir = new THREE.Vector3();
+    const _localForward = new THREE.Vector3();
+    const _localRight = new THREE.Vector3();
+    const _invAnchorQuat = new THREE.Quaternion();
 
-    // Contenedor del escenario (se oculta automáticamente si el usuario entra en modo AR Passthrough)
-    const entornoVirtual = new THREE.Group();
-    scene.add(entornoVirtual);
+    // Referencias DOM
+    const hudOverlay = document.getElementById('hud-overlay');
+    const loadingModal = document.getElementById('loading-modal');
+    const launchControls = document.getElementById('launch-controls');
+    const btnStartPreview = document.getElementById('btn-start-preview');
+    const btnEnterVR = document.getElementById('btn-enter-vr');
+    const btnEnterAR = document.getElementById('btn-enter-ar');
+    const btnReplayMagic = document.getElementById('btn-replay-magic');
+    const statusText = document.getElementById('status-text');
+    const btnStepForward = document.getElementById('btn-step-forward');
+    const btnStepBack = document.getElementById('btn-step-back');
+    const btnResetWalk = document.getElementById('btn-reset-walk');
+    const distanceReadout = document.getElementById('distance-readout');
+    const toastBanner = document.getElementById('toast-banner');
 
-    // Cargar Escenario (Solo visible en VR)
-    loader.load('./models/escenario.glb', (gltf) => {
-      entornoVirtual.add(gltf.scene);
-    });
+    function showToast(msg) {
+      toastBanner.textContent = msg;
+      toastBanner.style.opacity = '1';
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => { toastBanner.style.opacity = '0'; }, 3000);
+    }
 
-    // Cargar Escultura Principal (Visible tanto en VR como en AR sobre tu sala real)
-    loader.load('./models/escultura.glb', (gltf) => {
-      const escultura = gltf.scene;
-      // Posicionada en el suelo (Y=0) y 1.5 metros frente al usuario (Z=-1.5)
-      escultura.position.set(0, 0, -1.5);
-      scene.add(escultura);
-    });
+    init();
 
-    // Detectar si el usuario entró en VR o en AR para ocultar/mostrar las paredes del escenario
-    renderer.xr.addEventListener('sessionstart', () => {
-      const session = renderer.xr.getSession();
-      if (session.environmentBlendMode === 'alpha-blend') {
-        // Está en modo AR (Passthrough del Quest 3): ocultamos el escenario y dejamos la escultura
-        entornoVirtual.visible = false;
-        scene.background = null;
-      } else {
-        // Está en modo VR inmersivo: mostramos el escenario completo
-        entornoVirtual.visible = true;
-        scene.background = new THREE.Color(0x101218);
-      }
-    });
+    async function init() {
+      const container = document.getElementById('webgl-viewport');
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x050a08);
+      scene.fog = new THREE.FogExp2(0x050a08, 0.018);
 
-    // 5. Ciclo de renderizado oficial para WebXR ( corre a 72/90/120 Hz según el Quest 3 )
-    renderer.setAnimationLoop(() => {
-      renderer.render(scene, camera);
-    });
+      // Cámara a 1.65m de altura (nivel de ojos humano a escala real)
+      camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 120);
+      camera.position.set(0, 1.65, 1.2);
+      camera.rotation.order = 'YXZ';
+      scene.add(camera);
 
-    window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
+      renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: true,
+        powerPreference: 'high-performance'
+      });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
       renderer.setSize(window.innerWidth, window.innerHeight);
-    });
+      renderer.xr.enabled = true;
+
+      if (typeof renderer.xr.setFoveation === 'function') {
+        renderer.xr.setFoveation(0.85);
+      }
+
+      renderer.localClippingEnabled = false;
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.22;
+      container.appendChild(renderer.domElement);
+
+      setupLighting();
+      setupQuestControllers();
+
+      // Jerarquía Espacial Visible desde el Inicio en Y = 0 (Nivel de piso)
+      hallAnchorGroup = new THREE.Group();
+      hallAnchorGroup.position.set(0, 0, 0);
+      hallAnchorGroup.visible = true;
+      scene.add(hallAnchorGroup);
+
+      walkStageGroup = new THREE.Group();
+      hallAnchorGroup.add(walkStageGroup);
+
+      interiorGroup = new THREE.Group();
+      walkStageGroup.add(interiorGroup);
+
+      setupMagicalLeafMaterialization();
+      await loadModelsParallel();
+
+      setupUIAndDesktopControls();
+
+      window.addEventListener('resize', () => {
+        if (!renderer.xr.isPresenting) {
+          camera.aspect = window.innerWidth / window.innerHeight;
+          camera.updateProjectionMatrix();
+          renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+      });
+
+      lastFrameTime = performance.now();
+      renderer.setAnimationLoop(renderLoop);
+    }
+
+    function setupLighting() {
+      const ambientLight = new THREE.AmbientLight(0xd9f99d, 0.85);
+      scene.add(ambientLight);
+
+      const hemiLight = new THREE.HemisphereLight(0xfef9c3, 0x14532d, 1.65);
+      hemiLight.position.set(0, 12, 0);
+      scene.add(hemiLight);
+
+      const dirLight = new THREE.DirectionalLight(0xfffbeb, 2.0);
+      dirLight.position.set(4, 14, 6);
+      scene.add(dirLight);
+    }
+
+    function setupQuestControllers() {
+      const lineGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(0, 0, -2.5)
+      ]);
+      const lineMat = new THREE.LineBasicMaterial({
+        color: 0xa3e635,
+        transparent: true,
+        opacity: 0.45
+      });
+
+      for (let i = 0; i < 2; i++) {
+        const controller = renderer.xr.getController(i);
+        controller.add(new THREE.Line(lineGeo, lineMat));
+
+        // Al presionar el Gatillo o Pellizcar con la mano en Quest 3, lanza el efecto mágico de materialización
+        controller.addEventListener('select', () => {
+          triggerMaterializationWave();
+        });
+
+        scene.add(controller);
+        controllers.push(controller);
+      }
+    }
+
+    function createRadiantLeafTexture() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 128;
+      canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+
+      ctx.save();
+      ctx.translate(64, 64);
+
+      const aura = ctx.createRadialGradient(0, 0, 4, 0, 0, 60);
+      aura.addColorStop(0, 'rgba(255, 255, 220, 0.55)');
+      aura.addColorStop(0.5, 'rgba(190, 242, 100, 0.22)');
+      aura.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = aura;
+      ctx.beginPath();
+      ctx.arc(0, 0, 60, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(0, -48);
+      ctx.bezierCurveTo(35, -30, 42, 14, 0, 46);
+      ctx.bezierCurveTo(-42, 14, -35, -30, 0, -48);
+      ctx.closePath();
+
+      const leafGrad = ctx.createLinearGradient(0, -48, 0, 46);
+      leafGrad.addColorStop(0, '#ffffff');
+      leafGrad.addColorStop(0.5, '#f7fee7');
+      leafGrad.addColorStop(1, '#d9f99d');
+      ctx.fillStyle = leafGrad;
+      ctx.fill();
+
+      ctx.strokeStyle = '#fef08a';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(0, -42);
+      ctx.lineTo(0, 50);
+      ctx.stroke();
+
+      ctx.restore();
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.needsUpdate = true;
+      return tex;
+    }
+
+    function setupMagicalLeafMaterialization() {
+      clippingPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1000);
+
+      const leafTexture = createRadiantLeafTexture();
+      const palette = [
+        new THREE.Color('#16a34a'),
+        new THREE.Color('#22c55e'),
+        new THREE.Color('#4ade80'),
+        new THREE.Color('#84cc16'),
+        new THREE.Color('#a3e635'),
+        new THREE.Color('#bef264'),
+        new THREE.Color('#eab308'),
+        new THREE.Color('#facc15'),
+        new THREE.Color('#fde047'),
+        new THREE.Color('#fef08a')
+      ];
+
+      const leafCount = 950;
+      const geo = new THREE.BufferGeometry();
+      const positions = new Float32Array(leafCount * 3);
+      const colors = new Float32Array(leafCount * 3);
+      const seeds = new Float32Array(leafCount * 4);
+
+      for (let i = 0; i < leafCount; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const radius = 0.4 + Math.random() * 2.1;
+        positions[i * 3] = Math.cos(angle) * radius;
+        positions[i * 3 + 1] = Math.random() * 10.5;
+        positions[i * 3 + 2] = -Math.random() * 14.2;
+
+        const c = palette[Math.floor(Math.random() * palette.length)];
+        colors[i * 3] = c.r;
+        colors[i * 3 + 1] = c.g;
+        colors[i * 3 + 2] = c.b;
+
+        seeds[i * 4] = Math.random() * Math.PI * 2;
+        seeds[i * 4 + 1] = 0.55 + Math.random() * 1.05;
+        seeds[i * 4 + 2] = (Math.random() - 0.5) * 4.8;
+        seeds[i * 4 + 3] = Math.random() < 0.28 ? 1.0 : 0.0;
+      }
+
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
+      geo.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 4));
+
+      leafMaterial = new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        uniforms: {
+          uMap: { value: leafTexture },
+          uTime: { value: 0 },
+          uProgress: { value: 1.0 },
+          uMaxHeight: { value: 10.8 },
+          uOpacity: { value: 0.65 },
+          uPixelRatio: { value: renderer.getPixelRatio() }
+        },
+        vertexShader: `
+          attribute vec3 aColor;
+          attribute vec4 aSeed;
+          varying vec3 vColor;
+          varying float vAngle;
+          varying float vAlpha;
+          varying float vSparkle;
+          varying float vWaveGlow;
+
+          uniform float uTime;
+          uniform float uProgress;
+          uniform float uMaxHeight;
+          uniform float uPixelRatio;
+
+          void main() {
+            vColor = aColor;
+            float phase = aSeed.x;
+            float leafScale = aSeed.y;
+            float rotSpeed = aSeed.z;
+            vSparkle = aSeed.w;
+
+            vec3 pos = position;
+            float bandY = uProgress * uMaxHeight;
+
+            float vortexAngle = uTime * 2.2 + phase + pos.y * 0.65;
+            float swirlRadius = 0.28 + 0.18 * sin(uTime * 1.7 + phase);
+            pos.x += cos(vortexAngle) * swirlRadius;
+            pos.z += sin(vortexAngle) * swirlRadius;
+
+            float activeCeiling = max(0.8, bandY + 1.1);
+            pos.y = mod(pos.y + uTime * (1.15 + leafScale * 0.5), activeCeiling);
+
+            float distToWave = abs(pos.y - bandY);
+            float waveBoost = smoothstep(2.2, 0.0, distToWave);
+            vWaveGlow = waveBoost;
+
+            float twinkle = 0.65 + 0.35 * sin(uTime * 6.5 + phase * 3.0);
+            vAngle = phase + uTime * rotSpeed;
+            vAlpha = clamp((0.40 + waveBoost * 0.60) * twinkle, 0.0, 1.0);
+
+            vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+            gl_Position = projectionMatrix * mvPosition;
+
+            float baseSize = (vSparkle > 0.5 ? 48.0 : 68.0) * leafScale * (1.0 + waveBoost * 0.55);
+            gl_PointSize = clamp((baseSize * uPixelRatio) / max(-mvPosition.z, 0.45), 6.0, 64.0);
+          }
+        `,
+        fragmentShader: `
+          uniform sampler2D uMap;
+          uniform float uOpacity;
+          varying vec3 vColor;
+          varying float vAngle;
+          varying float vAlpha;
+          varying float vSparkle;
+          varying float vWaveGlow;
+
+          void main() {
+            vec2 centered = gl_PointCoord - vec2(0.5);
+            float dist = length(centered);
+
+            if (vSparkle > 0.5) {
+              float crossStar = max(0.0, 1.0 - abs(centered.x * centered.y) * 90.0);
+              float radial = smoothstep(0.5, 0.0, dist);
+              float intensity = radial * (0.6 + 0.8 * crossStar);
+              if (intensity < 0.05) discard;
+              vec3 sparkCol = mix(vColor, vec3(1.0, 0.99, 0.85), 0.55);
+              gl_FragColor = vec4(sparkCol * 1.45, intensity * vAlpha * uOpacity);
+              return;
+            }
+
+            float c = cos(vAngle);
+            float s = sin(vAngle);
+            vec2 rotatedUV = vec2(
+              centered.x * c - centered.y * s,
+              centered.x * s + centered.y * c
+            ) + vec2(0.5);
+
+            if (rotatedUV.x < 0.0 || rotatedUV.x > 1.0 || rotatedUV.y < 0.0 || rotatedUV.y > 1.0) discard;
+
+            vec4 texColor = texture2D(uMap, rotatedUV);
+            if (texColor.a < 0.08) discard;
+
+            vec3 radiantColor = mix(vColor * texColor.rgb, vec3(1.0, 0.98, 0.78), vWaveGlow * 0.48);
+            gl_FragColor = vec4(radiantColor * 1.35, texColor.a * vAlpha * uOpacity);
+          }
+        `
+      });
+
+      leafParticles = new THREE.Points(geo, leafMaterial);
+      leafParticles.frustumCulled = false;
+      leafParticles.visible = true;
+      walkStageGroup.add(leafParticles);
+
+      const ringGeo = new THREE.RingGeometry(1.6, 2.35, 48).rotateX(-Math.PI / 2);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: 0xfde047,
+        transparent: true,
+        opacity: 0.0,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      magicWaveRing = new THREE.Mesh(ringGeo, ringMat);
+      magicWaveRing.visible = false;
+      magicWaveRing.frustumCulled = false;
+      walkStageGroup.add(magicWaveRing);
+
+      magicWaveLight = new THREE.PointLight(0xfde047, 0, 14);
+      walkStageGroup.add(magicWaveLight);
+    }
+
+    function fixCorridorMaterial(mat, maxAnisotropy) {
+      if (!mat) return;
+      const name = (mat.name || '').toLowerCase();
+      const cutoutNames = ['alexandrapalm', 'wild bush', 'plantas', 'plant.leaf', 'rejapared', 'leaves', 'orchid', 'sepal'];
+      const isCutout = cutoutNames.some(k => name.includes(k));
+
+      if (isCutout) {
+        mat.transparent = false;
+        mat.alphaTest = 0.42;
+        mat.depthWrite = true;
+        mat.side = THREE.DoubleSide;
+      } else {
+        mat.transparent = false;
+        mat.alphaTest = 0;
+        mat.depthWrite = true;
+        mat.side = THREE.FrontSide;
+      }
+
+      ['map', 'normalMap', 'roughnessMap', 'metalnessMap'].forEach((mapKey) => {
+        if (mat[mapKey]) mat[mapKey].anisotropy = maxAnisotropy;
+      });
+    }
+
+    async function loadModelsParallel() {
+      await MeshoptDecoder.ready;
+
+      const dracoLoader = new DRACOLoader();
+      dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+      gltfLoader = new GLTFLoader();
+      gltfLoader.setDRACOLoader(dracoLoader);
+      gltfLoader.setMeshoptDecoder(MeshoptDecoder);
+
+      const progressMap = { corridor: 0, rock: 0, sculpture: 0 };
+      const updateUIProgress = () => {
+        const total = Math.min(99, Math.round((progressMap.corridor * 0.65) + (progressMap.rock * 0.15) + (progressMap.sculpture * 0.20)));
+        document.getElementById('progress-bar').style.width = total + '%';
+        document.getElementById('progress-text').textContent = total + '%';
+      };
+
+      const loadWithProgress = (url, key) =>
+        new Promise((resolve, reject) => {
+          gltfLoader.load(
+            url,
+            (gltf) => { progressMap[key] = 100; updateUIProgress(); resolve(gltf); },
+            (xhr) => {
+              if (xhr.total > 0) {
+                progressMap[key] = (xhr.loaded / xhr.total) * 100;
+                updateUIProgress();
+              }
+            },
+            reject
+          );
+        });
+
+      try {
+        const [gltfCorridor, gltfRock, gltfSculpture] = await Promise.all([
+          loadWithProgress(MODELS.corridor, 'corridor'),
+          loadWithProgress(MODELS.rock, 'rock'),
+          loadWithProgress(MODELS.sculpture, 'sculpture')
+        ]);
+
+        const corridor = gltfCorridor.scene;
+        corridor.scale.setScalar(5.2);
+        corridor.updateMatrixWorld(true);
+
+        const pisoSlabBox = new THREE.Box3();
+        const wallBox = new THREE.Box3();
+        let hasPisoSlab = false;
+        let hasWallMesh = false;
+
+        corridor.traverse((node) => {
+          if (node.isMesh) {
+            const mName = (node.name || '').toLowerCase();
+            const matName = (node.material?.name || '').toLowerCase();
+            if (mName.includes('pisoceart') || matName.includes('pisoceart')) {
+              pisoSlabBox.expandByObject(node);
+              hasPisoSlab = true;
+            }
+            if (mName.includes('muro') || matName.includes('murocear')) {
+              wallBox.expandByObject(node);
+              hasWallMesh = true;
+            }
+          }
+        });
+
+        const fullCorrBox = new THREE.Box3().setFromObject(corridor);
+        const refCenter = hasWallMesh ? wallBox.getCenter(new THREE.Vector3()) : fullCorrBox.getCenter(new THREE.Vector3());
+        const exactFloorY = hasPisoSlab ? pisoSlabBox.min.y : fullCorrBox.min.y;
+        const entranceZ = hasWallMesh ? wallBox.max.z : fullCorrBox.max.z;
+        const backZ = hasWallMesh ? wallBox.min.z : fullCorrBox.min.z;
+
+        corridor.position.set(-refCenter.x, -exactFloorY, -entranceZ);
+        corridor.updateMatrixWorld(true);
+
+        totalCorridorLength = Math.abs(entranceZ - backZ);
+        const sculptureZ = -(totalCorridorLength * 0.46);
+
+        const rock = gltfRock.scene;
+        rock.scale.setScalar(3.60);
+        rock.updateMatrixWorld(true);
+        const rockBox = new THREE.Box3().setFromObject(rock);
+        const rockCenter = rockBox.getCenter(new THREE.Vector3());
+        rock.position.set(-rockCenter.x, -rockBox.min.y, sculptureZ - rockCenter.z);
+        rock.updateMatrixWorld(true);
+        const rockHeight = rockBox.max.y - rockBox.min.y;
+
+        const sculpture = gltfSculpture.scene;
+        sculpture.scale.setScalar(5.50);
+        sculpture.updateMatrixWorld(true);
+        const sculpBox = new THREE.Box3().setFromObject(sculpture);
+        const sculpCenter = sculpBox.getCenter(new THREE.Vector3());
+        sculpture.position.set(
+          -sculpCenter.x,
+          rockHeight - sculpBox.min.y - 0.10,
+          sculptureZ - sculpCenter.z
+        );
+        sculpture.updateMatrixWorld(true);
+
+        const sculptureLight = new THREE.PointLight(0xfef08a, 2.4, 14);
+        sculptureLight.position.set(0, rockHeight + 2.5, sculptureZ + 1.5);
+        interiorGroup.add(corridor, rock, sculpture, sculptureLight);
+
+        const combinedBox = new THREE.Box3().setFromObject(interiorGroup);
+        maxRevealHeight = Math.max(10.5, combinedBox.max.y + 0.6);
+        leafMaterial.uniforms.uMaxHeight.value = maxRevealHeight;
+        magicWaveRing.position.set(0, 0.1, sculptureZ * 0.65);
+
+        const maxAniso = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+        const processedMaterials = new Set();
+
+        interiorGroup.traverse((node) => {
+          node.frustumCulled = false;
+          if (node.isMesh && node.material) {
+            const mats = Array.isArray(node.material) ? node.material : [node.material];
+            mats.forEach((mat) => {
+              if (!processedMaterials.has(mat)) {
+                fixCorridorMaterial(mat, maxAniso);
+                mat.clippingPlanes = [clippingPlane];
+                mat.needsUpdate = true;
+                processedMaterials.add(mat);
+              }
+            });
+          }
+        });
+
+        dracoLoader.dispose();
+
+        document.getElementById('progress-bar').style.width = '100%';
+        document.getElementById('progress-text').textContent = '100%';
+        document.getElementById('progress-container').classList.add('hidden');
+        document.getElementById('loading-message').textContent = '¡Pasillo y Escultura listos!';
+        launchControls.classList.remove('hidden');
+        launchControls.classList.add('flex');
+
+        // Iniciar la materialización automáticamente de fondo para que el usuario ya vea la sala viva
+        triggerMaterializationWave();
+      } catch (e) {
+        console.error('Error cargando modelos:', e);
+        document.getElementById('loading-message').textContent = 'Error al cargar modelos GLB. Verifica tu conexión.';
+      }
+    }
+
+    function triggerMaterializationWave() {
+      renderer.localClippingEnabled = true;
+      isMaterializing = true;
+      materializationT = 0;
+      clippingPlane.constant = hallAnchorGroup.position.y + 0.05;
+
+      leafParticles.visible = true;
+      leafMaterial.uniforms.uProgress.value = 0;
+      leafMaterial.uniforms.uOpacity.value = 1.0;
+
+      magicWaveRing.visible = true;
+      magicWaveRing.material.opacity = 0.85;
+      magicWaveLight.intensity = 4.5;
+
+      showToast('✨ Materializando Pasillo y Escultura...');
+    }
+
+    function setupUIAndDesktopControls() {
+      btnStartPreview.addEventListener('click', () => {
+        loadingModal.classList.add('hidden');
+        hudOverlay.classList.add('active');
+        triggerMaterializationWave();
+      });
+
+      btnReplayMagic.addEventListener('click', triggerMaterializationWave);
+      btnEnterVR.addEventListener('click', () => startXRSession('immersive-vr'));
+      btnEnterAR.addEventListener('click', () => startXRSession('immersive-ar'));
+
+      const bindWalkButton = (btn, dir) => {
+        btn.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          btn.classList.add('pressing');
+          moveButtonDir = dir;
+          advanceAlongViewDirection(dir * 1.6, 0);
+        });
+        const stopPress = () => {
+          btn.classList.remove('pressing');
+          if (moveButtonDir === dir) moveButtonDir = 0;
+        };
+        btn.addEventListener('pointerup', stopPress);
+        btn.addEventListener('pointerleave', stopPress);
+        btn.addEventListener('pointercancel', stopPress);
+      };
+
+      bindWalkButton(btnStepForward, 1);
+      bindWalkButton(btnStepBack, -1);
+
+      btnResetWalk.addEventListener('click', () => {
+        targetWalkOffset.set(0, 0, 0);
+        showToast('Regresando a la entrada del pasillo');
+      });
+
+      // Controles de Ratón / Touch para mirar alrededor en PC y Móvil
+      const viewport = document.getElementById('webgl-viewport');
+      viewport.addEventListener('pointerdown', (e) => {
+        isPointerDown = true;
+        prevPointerX = e.clientX;
+        prevPointerY = e.clientY;
+      });
+
+      window.addEventListener('pointermove', (e) => {
+        if (!isPointerDown || renderer.xr.isPresenting) return;
+        const dx = e.clientX - prevPointerX;
+        const dy = e.clientY - prevPointerY;
+        prevPointerX = e.clientX;
+        prevPointerY = e.clientY;
+
+        yaw -= dx * 0.0045;
+        pitch = THREE.MathUtils.clamp(pitch - dy * 0.0045, -1.1, 1.1);
+        camera.rotation.set(pitch, yaw, 0, 'YXZ');
+      });
+
+      window.addEventListener('pointerup', () => { isPointerDown = false; });
+
+      // Teclado WASD y Flechas para caminar desde el navegador de PC
+      window.addEventListener('keydown', (e) => {
+        const k = e.key.toLowerCase();
+        if (k === 'w' || e.key === 'ArrowUp') keysPressed.forward = true;
+        if (k === 's' || e.key === 'ArrowDown') keysPressed.back = true;
+        if (k === 'a' || e.key === 'ArrowLeft') keysPressed.left = true;
+        if (k === 'd' || e.key === 'ArrowRight') keysPressed.right = true;
+      });
+
+      window.addEventListener('keyup', (e) => {
+        const k = e.key.toLowerCase();
+        if (k === 'w' || e.key === 'ArrowUp') keysPressed.forward = false;
+        if (k === 's' || e.key === 'ArrowDown') keysPressed.back = false;
+        if (k === 'a' || e.key === 'ArrowLeft') keysPressed.left = false;
+        if (k === 'd' || e.key === 'ArrowRight') keysPressed.right = false;
+      });
+    }
+
+    function advanceAlongViewDirection(forwardMeters, strafeMeters = 0) {
+      const activeCam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
+      activeCam.getWorldDirection(_rayDir);
+      _horizDir.set(_rayDir.x, 0, _rayDir.z);
+      if (_horizDir.lengthSq() < 0.001) {
+        _horizDir.set(0, 0, -1);
+      } else {
+        _horizDir.normalize();
+      }
+
+      _invAnchorQuat.copy(hallAnchorGroup.quaternion).invert();
+      _localForward.copy(_horizDir).applyQuaternion(_invAnchorQuat);
+      _localForward.y = 0;
+      _localForward.normalize();
+
+      _localRight.set(-_localForward.z, 0, _localForward.x);
+
+      targetWalkOffset.x -= (_localForward.x * forwardMeters + _localRight.x * strafeMeters);
+      targetWalkOffset.z -= (_localForward.z * forwardMeters + _localRight.z * strafeMeters);
+
+      targetWalkOffset.x = THREE.MathUtils.clamp(targetWalkOffset.x, -1.45, 1.45);
+      targetWalkOffset.z = THREE.MathUtils.clamp(targetWalkOffset.z, -10.0, totalCorridorLength + 25.0);
+    }
+
+    function processQuestThumbsticks(dt) {
+      if (!renderer.xr.isPresenting) return;
+      const session = renderer.xr.getSession();
+      if (!session || !session.inputSources) return;
+
+      if (buttonCooldown > 0) buttonCooldown -= dt;
+
+      for (const source of session.inputSources) {
+        if (!source.gamepad) continue;
+        const gp = source.gamepad;
+        const axes = gp.axes;
+
+        const stickX = axes.length >= 4 ? axes[2] : (axes[0] || 0);
+        const stickY = axes.length >= 4 ? axes[3] : (axes[1] || 0);
+
+        if (Math.abs(stickY) > 0.15 || Math.abs(stickX) > 0.15) {
+          if (source.handedness === 'left' || session.inputSources.length === 1) {
+            advanceAlongViewDirection(-stickY * 3.8 * dt, stickX * 2.5 * dt);
+          } else if (source.handedness === 'right') {
+            advanceAlongViewDirection(-stickY * 3.8 * dt, 0);
+            if (Math.abs(stickX) > 0.25) {
+              hallAnchorGroup.rotation.y -= stickX * 1.4 * dt;
+            }
+          }
+        }
+
+        // Botón A / X: Regresar al inicio del pasillo
+        if (gp.buttons[4]?.pressed && buttonCooldown <= 0) {
+          buttonCooldown = 0.45;
+          targetWalkOffset.set(0, 0, 0);
+        }
+
+        // Botón B / Y: Repetir materialización de hojas
+        if (gp.buttons[5]?.pressed && buttonCooldown <= 0) {
+          buttonCooldown = 0.45;
+          triggerMaterializationWave();
+        }
+      }
+    }
+
+    async function startXRSession(requestedMode = 'immersive-vr') {
+      loadingModal.classList.add('hidden');
+      hudOverlay.classList.add('active');
+
+      if (!navigator.xr) {
+        showToast('WebXR no detectado en este navegador · Modo 3D activo');
+        return;
+      }
+
+      try {
+        let mode = requestedMode;
+        let supported = await navigator.xr.isSessionSupported(mode);
+
+        if (!supported) {
+          const fallback = mode === 'immersive-vr' ? 'immersive-ar' : 'immersive-vr';
+          if (await navigator.xr.isSessionSupported(fallback)) {
+            mode = fallback;
+            supported = true;
+          }
+        }
+
+        if (!supported) {
+          showToast('Visor XR no conectado · Explorando en pantalla 3D');
+          return;
+        }
+
+        const session = await navigator.xr.requestSession(mode, {
+          optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking', 'dom-overlay'],
+          domOverlay: { root: hudOverlay }
+        });
+
+        try {
+          renderer.xr.setReferenceSpaceType('local-floor');
+        } catch (_) {
+          renderer.xr.setReferenceSpaceType('local');
+        }
+
+        await renderer.xr.setSession(session);
+
+        // Si es VR ocultamos la habitación falsa del emulador con fondo oscuro; si es AR dejamos fondo transparente para Passthrough
+        if (mode === 'immersive-ar' || session.environmentBlendMode === 'alpha-blend') {
+          scene.background = null;
+          scene.fog = null;
+        } else {
+          scene.background = new THREE.Color(0x050a08);
+          scene.fog = new THREE.FogExp2(0x050a08, 0.018);
+        }
+
+        hallAnchorGroup.position.set(0, 0, 0);
+        hallAnchorGroup.visible = true;
+        targetWalkOffset.set(0, 0, 0);
+        currentWalkOffset.set(0, 0, 0);
+
+        // Lanzar la materialización mágica al entrar al visor
+        triggerMaterializationWave();
+
+        session.addEventListener('end', () => {
+          scene.background = new THREE.Color(0x050a08);
+          scene.fog = new THREE.FogExp2(0x050a08, 0.018);
+        });
+      } catch (err) {
+        console.warn('No se pudo abrir sesión XR:', err);
+        showToast('Modo 3D activo en navegador');
+      }
+    }
+
+    function renderLoop(timestamp) {
+      const dt = Math.min(0.05, (timestamp - lastFrameTime) / 1000 || 0.016);
+      lastFrameTime = timestamp;
+      const timeSec = timestamp * 0.001;
+
+      processQuestThumbsticks(dt);
+
+      // Caminata por botones o teclado WASD/Flechas
+      if (moveButtonDir !== 0) {
+        advanceAlongViewDirection(moveButtonDir * 4.4 * dt, 0);
+      }
+      if (keysPressed.forward) advanceAlongViewDirection(4.2 * dt, 0);
+      if (keysPressed.back) advanceAlongViewDirection(-4.2 * dt, 0);
+      if (keysPressed.left) advanceAlongViewDirection(0, -3.2 * dt);
+      if (keysPressed.right) advanceAlongViewDirection(0, 3.2 * dt);
+
+      currentWalkOffset.lerp(targetWalkOffset, Math.min(1, dt * 8.5));
+      walkStageGroup.position.set(currentWalkOffset.x, 0, currentWalkOffset.z);
+
+      distanceReadout.textContent = `${currentWalkOffset.z.toFixed(1)} m`;
+
+      if (isMaterializing) {
+        materializationT = Math.min(1, materializationT + dt * 0.28);
+        const eased = 1 - Math.pow(1 - materializationT, 3);
+        const revealH = eased * maxRevealHeight;
+
+        clippingPlane.constant = hallAnchorGroup.position.y + revealH;
+
+        leafMaterial.uniforms.uTime.value = timeSec;
+        leafMaterial.uniforms.uProgress.value = eased;
+        leafMaterial.uniforms.uOpacity.value = 1.0;
+
+        magicWaveRing.position.y = Math.min(revealH, 6.0);
+        magicWaveRing.rotation.z = timeSec * 1.8;
+        magicWaveRing.scale.setScalar(1.0 + Math.sin(timeSec * 5.0) * 0.12);
+        magicWaveRing.material.opacity = (1.0 - materializationT) * 0.85;
+
+        magicWaveLight.position.set(0, Math.min(revealH + 0.5, 6.5), -(totalCorridorLength * 0.42));
+        magicWaveLight.intensity = (1.0 - materializationT * 0.7) * 5.0;
+
+        if (materializationT >= 1) {
+          isMaterializing = false;
+          renderer.localClippingEnabled = false;
+          clippingPlane.constant = 1000;
+          magicWaveRing.visible = false;
+          magicWaveLight.intensity = 0;
+          statusText.textContent = 'Pasillo materializado · Camina con Joysticks, WASD o Botones';
+        }
+      } else if (leafParticles && leafParticles.visible) {
+        leafMaterial.uniforms.uTime.value = timeSec * 0.65;
+        leafMaterial.uniforms.uOpacity.value = Math.max(0.45, leafMaterial.uniforms.uOpacity.value - dt * 0.25);
+      }
+
+      renderer.render(scene, camera);
+    }
   </script>
 </body>
 </html>
