@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Experiencia Quest 3 - VR & Mixed Reality</title>
+  <style>
+    body { margin: 0; background-color: #111; color: #fff; font-family: sans-serif; overflow: hidden; }
+    #info { position: absolute; top: 16px; width: 100%; text-align: center; z-index: 10; pointer-events: none; }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="info">Abre esta página en Meta Quest Browser y pulsa ENTER VR o START AR</div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+    import { VRButton } from 'three/addons/webxr/VRButton.js';
+    import { ARButton } from 'three/addons/webxr/ARButton.js';
+
+    // 1. Escena, Cámara y Renderizador con canal Alfa (para permitir AR Passthrough en Quest 3)
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 100);
+    camera.position.set(0, 1.6, 2.5); // 1.6m = altura promedio de los ojos humanos
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.xr.enabled = true; // Activa el motor WebXR para Meta Quest 3
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
+    document.body.appendChild(renderer.domElement);
+
+    // 2. Botones nativos para entrar en VR (escenario cerrado) o AR (Passthrough a color)
+    const vrBtn = VRButton.createButton(renderer);
+    vrBtn.style.left = 'calc(50% - 170px)';
+    document.body.appendChild(vrBtn);
+
+    const arBtn = ARButton.createButton(renderer, { requiredFeatures: ['local-floor'] });
+    arBtn.style.left = 'calc(50% + 20px)';
+    document.body.appendChild(arBtn);
+
+    // 3. Iluminación optimizada (Cero sombras dinámicas costosas)
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444455, 1.8);
+    hemiLight.position.set(0, 10, 0);
+    scene.add(hemiLight);
+
+    const dirLight = new THREE.DirectionalLight(0xfff5e6, 1.5);
+    dirLight.position.set(3, 6, 4);
+    scene.add(dirLight);
+
+    // 4. Cargador GLTF + Soporte Draco por si exportaste comprimido desde Blender
+    const dracoLoader = new DRACOLoader();
+    dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+    const loader = new GLTFLoader();
+    loader.setDRACOLoader(dracoLoader);
+
+    // Contenedor del escenario (se oculta automáticamente si el usuario entra en modo AR Passthrough)
+    const entornoVirtual = new THREE.Group();
+    scene.add(entornoVirtual);
+
+    // Cargar Escenario (Solo visible en VR)
+    loader.load('./models/escenario.glb', (gltf) => {
+      entornoVirtual.add(gltf.scene);
+    });
+
+    // Cargar Escultura Principal (Visible tanto en VR como en AR sobre tu sala real)
+    loader.load('./models/escultura.glb', (gltf) => {
+      const escultura = gltf.scene;
+      // Posicionada en el suelo (Y=0) y 1.5 metros frente al usuario (Z=-1.5)
+      escultura.position.set(0, 0, -1.5);
+      scene.add(escultura);
+    });
+
+    // Detectar si el usuario entró en VR o en AR para ocultar/mostrar las paredes del escenario
+    renderer.xr.addEventListener('sessionstart', () => {
+      const session = renderer.xr.getSession();
+      if (session.environmentBlendMode === 'alpha-blend') {
+        // Está en modo AR (Passthrough del Quest 3): ocultamos el escenario y dejamos la escultura
+        entornoVirtual.visible = false;
+        scene.background = null;
+      } else {
+        // Está en modo VR inmersivo: mostramos el escenario completo
+        entornoVirtual.visible = true;
+        scene.background = new THREE.Color(0x101218);
+      }
+    });
+
+    // 5. Ciclo de renderizado oficial para WebXR ( corre a 72/90/120 Hz según el Quest 3 )
+    renderer.setAnimationLoop(() => {
+      renderer.render(scene, camera);
+    });
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
