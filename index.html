@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <title>Pasillo Felino VR/AR · Museo Leonora Carrington</title>
+  <title>Pasillo Surrealista · VR/AR</title>
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -52,8 +52,10 @@
     <div class="w-14 h-14 mb-4 rounded-full bg-emerald-500/10 border border-lime-300/40 flex items-center justify-center shadow-[0_0_30px_rgba(132,204,22,0.25)]">
       <div class="w-3.5 h-3.5 rounded-full bg-yellow-300 animate-ping"></div>
     </div>
-    <span class="text-[10px] uppercase tracking-[0.3em] text-lime-300/90 font-semibold mb-1">Meta Quest 3 · WebXR Inmersivo</span>
-    <h1 class="font-museum text-3xl sm:text-4xl text-stone-100 tracking-wide mb-2">Pasillo Leonora Carrington</h1>
+    <!-- CAMBIO: Leyenda XR Inmersivo -->
+    <span class="text-[10px] uppercase tracking-[0.3em] text-lime-300/90 font-semibold mb-1">XR Inmersivo</span>
+    <!-- CAMBIO: Título Pasillo Surrealista -->
+    <h1 class="font-museum text-3xl sm:text-4xl text-stone-100 tracking-wide mb-2">Pasillo Surrealista</h1>
     <p id="loading-message" class="text-xs text-stone-400 max-w-xs mb-6 leading-relaxed">Decodificando arquitectura, roca y escultura monumental...</p>
     <div id="progress-container" class="w-64 flex flex-col items-center mb-5">
       <div class="w-full h-1.5 bg-stone-800 rounded-full overflow-hidden">
@@ -108,7 +110,6 @@
     import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
     import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 
-    // CORRECCIÓN CLAVE: Usar rutas relativas para que funcione directamente en GitHub Pages
     const REPO_RAW_BASE = './'; 
     const MODELS = {
       corridor: `${REPO_RAW_BASE}models/pasillo_optimizado.glb`,
@@ -118,6 +119,7 @@
     let scene, camera, renderer, gltfLoader;
     let hallAnchorGroup, walkStageGroup, interiorGroup;
     let clippingPlane, leafParticles, leafMaterial, magicWaveRing, magicWaveLight;
+    let fireflies, fireflyMaterial; // <-- NUEVO: Variables para luciérnagas
 
     const controllers = [];
 
@@ -206,6 +208,7 @@
       walkStageGroup.add(interiorGroup);
 
       setupMagicalLeafMaterialization();
+      setupFireflies(); // <-- NUEVO: Inicializar luciérnagas
       await loadModelsParallel();
 
       setupUIAndDesktopControls();
@@ -297,6 +300,12 @@
             float vortexAngle = uTime * 2.2 + phase + pos.y * 0.65; float swirlRadius = 0.28 + 0.18 * sin(uTime * 1.7 + phase);
             pos.x += cos(vortexAngle) * swirlRadius; pos.z += sin(vortexAngle) * swirlRadius;
             float activeCeiling = max(0.8, bandY + 1.1); pos.y = mod(pos.y + uTime * (1.15 + leafScale * 0.5), activeCeiling);
+            
+            // NUEVO: Pulso en los 3 ejes (X, Y, Z)
+            pos.x += sin(uTime * 4.0 + phase) * 0.15;
+            pos.y += cos(uTime * 3.5 + phase) * 0.15;
+            pos.z += sin(uTime * 5.0 + phase) * 0.15;
+
             float distToWave = abs(pos.y - bandY); float waveBoost = smoothstep(2.2, 0.0, distToWave); vWaveGlow = waveBoost;
             float twinkle = 0.65 + 0.35 * sin(uTime * 6.5 + phase * 3.0); vAngle = phase + uTime * rotSpeed;
             vAlpha = clamp((0.40 + waveBoost * 0.60) * twinkle, 0.0, 1.0);
@@ -335,6 +344,79 @@
       magicWaveLight = new THREE.PointLight(0xfde047, 0, 14); walkStageGroup.add(magicWaveLight);
     }
 
+    // NUEVO: Configuración de las Luciérnagas post-materialización
+    function setupFireflies() {
+      const fireflyCount = 400;
+      const geo = new THREE.BufferGeometry();
+      const positions = new Float32Array(fireflyCount * 3);
+      const seeds = new Float32Array(fireflyCount);
+
+      for (let i = 0; i < fireflyCount; i++) {
+        // Distribuir en todo el volumen del pasillo
+        positions[i * 3] = (Math.random() - 0.5) * 4.0; // X
+        positions[i * 3 + 1] = Math.random() * 5.0 + 0.5; // Y
+        positions[i * 3 + 2] = -Math.random() * 15.0;     // Z
+        seeds[i] = Math.random() * 100.0;
+      }
+
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1));
+
+      fireflyMaterial = new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        uniforms: {
+          uTime: { value: 0 },
+          uPixelRatio: { value: renderer.getPixelRatio() }
+        },
+        vertexShader: `
+          attribute float aSeed;
+          uniform float uTime;
+          uniform float uPixelRatio;
+          varying float vAlpha;
+
+          void main() {
+            vec3 pos = position;
+            float speed = 0.5 + fract(aSeed) * 0.5;
+            
+            // Movimiento flotante suave en 3 ejes
+            pos.x += sin(uTime * speed + aSeed * 10.0) * 0.6;
+            pos.y += cos(uTime * speed * 0.8 + aSeed * 20.0) * 0.4;
+            pos.z += sin(uTime * speed * 1.2 + aSeed * 30.0) * 0.6;
+
+            vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+            gl_Position = projectionMatrix * mvPosition;
+
+            // Pulso de tamaño y opacidad
+            float pulse = 0.5 + 0.5 * sin(uTime * 4.0 + aSeed * 50.0);
+            vAlpha = 0.2 + 0.8 * pulse;
+            
+            // Tamaño dependiente de la distancia
+            gl_PointSize = (25.0 * uPixelRatio * (0.5 + 0.5 * pulse)) / max(-mvPosition.z, 0.5);
+          }
+        `,
+        fragmentShader: `
+          varying float vAlpha;
+          void main() {
+            vec2 centered = gl_PointCoord - vec2(0.5);
+            float dist = length(centered);
+            float alpha = smoothstep(0.5, 0.0, dist);
+            if (alpha < 0.05) discard;
+            
+            // Color jade claro brillante
+            vec3 jadeColor = vec3(0.0, 1.0, 0.8); 
+            gl_FragColor = vec4(jadeColor * 2.0, alpha * vAlpha);
+          }
+        `
+      });
+
+      fireflies = new THREE.Points(geo, fireflyMaterial);
+      fireflies.frustumCulled = false;
+      fireflies.visible = false; // Ocultas hasta que termine la materialización
+      walkStageGroup.add(fireflies);
+    }
+
     function fixCorridorMaterial(mat, maxAnisotropy) {
       if (!mat) return;
       const name = (mat.name || '').toLowerCase();
@@ -371,7 +453,6 @@
           loadWithProgress(MODELS.sculpture, 'sculpture')
         ]);
 
-        // --- Procesamiento del Pasillo ---
         const corridor = gltfCorridor.scene;
         corridor.scale.setScalar(5.2);
         corridor.updateMatrixWorld(true);
@@ -394,15 +475,16 @@
         totalCorridorLength = Math.abs(entranceZ - backZ);
         const sculptureZ = -(totalCorridorLength * 0.46);
 
-        // --- Posicionamiento de la Escultura Felina (Izquierda, en el suelo) ---
+        // --- Posicionamiento de la Escultura Felina ---
         const sculpture = gltfSculpture.scene;
-        sculpture.scale.setScalar(5.50); 
+        // CAMBIO: Altura reducida para coincidir con el marco de la ventana
+        sculpture.scale.setScalar(3.2); 
         sculpture.updateMatrixWorld(true);
 
         const sculpBox = new THREE.Box3().setFromObject(sculpture);
         const sculpCenter = sculpBox.getCenter(new THREE.Vector3());
 
-        const lateralOffset = -1.2; // Desplazamiento a la izquierda
+        const lateralOffset = -1.2; 
         sculpture.position.set(
           -sculpCenter.x + lateralOffset, 
           -sculpBox.min.y,                
@@ -448,7 +530,7 @@
         triggerMaterializationWave();
       } catch (e) {
         console.error('Error cargando modelos:', e);
-        document.getElementById('loading-message').textContent = 'Error al cargar modelos GLB. Verifica tu conexión o que los archivos existan en /models/.';
+        document.getElementById('loading-message').textContent = 'Error al cargar modelos GLB. Verifica tu conexión.';
       }
     }
 
@@ -457,9 +539,14 @@
       isMaterializing = true;
       materializationT = 0;
       clippingPlane.constant = hallAnchorGroup.position.y + 0.05;
+      
       leafParticles.visible = true;
       leafMaterial.uniforms.uProgress.value = 0;
       leafMaterial.uniforms.uOpacity.value = 1.0;
+      
+      // Aseguramos que las luciérnagas se oculten al reiniciar
+      fireflies.visible = false;
+
       magicWaveRing.visible = true;
       magicWaveRing.material.opacity = 0.85;
       magicWaveLight.intensity = 4.5;
@@ -622,6 +709,7 @@
       currentWalkOffset.lerp(targetWalkOffset, Math.min(1, dt * 8.5));
       walkStageGroup.position.set(currentWalkOffset.x, 0, currentWalkOffset.z);
       distanceReadout.textContent = `${currentWalkOffset.z.toFixed(1)} m`;
+      
       if (isMaterializing) {
         materializationT = Math.min(1, materializationT + dt * 0.28);
         const eased = 1 - Math.pow(1 - materializationT, 3);
@@ -636,15 +724,30 @@
         magicWaveRing.material.opacity = (1.0 - materializationT) * 0.85;
         magicWaveLight.position.set(0, Math.min(revealH + 0.5, 6.5), -(totalCorridorLength * 0.42));
         magicWaveLight.intensity = (1.0 - materializationT * 0.7) * 5.0;
+        
         if (materializationT >= 1) {
-          isMaterializing = false; renderer.localClippingEnabled = false; clippingPlane.constant = 1000;
-          magicWaveRing.visible = false; magicWaveLight.intensity = 0;
+          isMaterializing = false; 
+          renderer.localClippingEnabled = false; 
+          clippingPlane.constant = 1000;
+          magicWaveRing.visible = false; 
+          magicWaveLight.intensity = 0;
+          
+          // CAMBIO: Ocultar hojas y mostrar luciérnagas al terminar
+          leafParticles.visible = false;
+          fireflies.visible = true;
+          
           statusText.textContent = 'Pasillo materializado · Camina con Joysticks, WASD o Botones';
         }
       } else if (leafParticles && leafParticles.visible) {
         leafMaterial.uniforms.uTime.value = timeSec * 0.65;
         leafMaterial.uniforms.uOpacity.value = Math.max(0.45, leafMaterial.uniforms.uOpacity.value - dt * 0.25);
       }
+
+      // NUEVO: Actualizar animación de luciérnagas si están visibles
+      if (fireflies && fireflies.visible) {
+        fireflyMaterial.uniforms.uTime.value = timeSec;
+      }
+
       renderer.render(scene, camera);
     }
   </script>
