@@ -87,7 +87,7 @@
           <span>Entrar en VR (Quest 3)</span>
         </button>
         <button id="btn-enter-ar" class="magic-btn flex-1 min-w-[165px] py-3.5 px-5 rounded-full text-lime-200 font-semibold text-xs uppercase tracking-wider flex items-center justify-center gap-2">Modo AR (Passthrough)</button>
-        <!-- Fallback iOS: botón que se activa si WebXR no está disponible -->
+        <!-- Fallback iOS -->
         <button id="btn-enter-ar-ios" class="hidden magic-btn flex-1 min-w-[165px] py-3.5 px-5 rounded-full text-lime-200 font-semibold text-xs uppercase tracking-wider flex items-center justify-center gap-2">AR (iOS Quick Look)</button>
       </div>
 
@@ -108,10 +108,11 @@
     import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
     import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 
-    const REPO_RAW_BASE = 'https://raw.githubusercontent.com/blenderingforconservation-maker/recorridovirtual_Leonora/main/';
+    // CORRECCIÓN CLAVE: Usar rutas relativas para que funcione directamente en GitHub Pages
+    const REPO_RAW_BASE = './'; 
     const MODELS = {
       corridor: `${REPO_RAW_BASE}models/pasillo_optimizado.glb`,
-      sculpture: `${REPO_RAW_BASE}models/escultura_felina_webAR_optimizado.glb` // <-- Nuevo modelo felino
+      sculpture: `${REPO_RAW_BASE}models/escultura_felina_webAR_optimizado.glb`
     };
 
     let scene, camera, renderer, gltfLoader;
@@ -208,7 +209,7 @@
       await loadModelsParallel();
 
       setupUIAndDesktopControls();
-      detectARSupport(); // <-- Detección de compatibilidad AR
+      detectARSupport();
 
       window.addEventListener('resize', () => {
         if (!renderer.xr.isPresenting) {
@@ -370,7 +371,7 @@
           loadWithProgress(MODELS.sculpture, 'sculpture')
         ]);
 
-        // --- Procesamiento del Pasillo (sin cambios estructurales) ---
+        // --- Procesamiento del Pasillo ---
         const corridor = gltfCorridor.scene;
         corridor.scale.setScalar(5.2);
         corridor.updateMatrixWorld(true);
@@ -391,37 +392,29 @@
         corridor.position.set(-refCenter.x, -exactFloorY, -entranceZ);
         corridor.updateMatrixWorld(true);
         totalCorridorLength = Math.abs(entranceZ - backZ);
-        const sculptureZ = -(totalCorridorLength * 0.46); // punto medio del pasillo
+        const sculptureZ = -(totalCorridorLength * 0.46);
 
-        // --- NUEVO: Posicionamiento de la Escultura Felina ---
-        // 1. Escalar la escultura a un tamaño monumental (ajustable)
+        // --- Posicionamiento de la Escultura Felina (Izquierda, en el suelo) ---
         const sculpture = gltfSculpture.scene;
-        sculpture.scale.setScalar(5.50); // Ajusta este valor si es necesario
+        sculpture.scale.setScalar(5.50); 
         sculpture.updateMatrixWorld(true);
 
-        // 2. Calcular su bounding box para conocer su altura y centro
         const sculpBox = new THREE.Box3().setFromObject(sculpture);
         const sculpCenter = sculpBox.getCenter(new THREE.Vector3());
 
-        // 3. Posicionar: centrada en X del pasillo, desplazada a la IZQUIERDA (X negativo)
-        //    y apoyada en el suelo (Y = 0 relativo al interiorGroup).
-        //    El desplazamiento lateral (ej. -1.2 m) se ajusta según el ancho del pasillo.
-        const lateralOffset = -1.2; // <-- Ajusta según el ancho real del pasillo
+        const lateralOffset = -1.2; // Desplazamiento a la izquierda
         sculpture.position.set(
-          -sculpCenter.x + lateralOffset,          // Centro X desplazado a la izquierda
-          -sculpBox.min.y,                         // Base de la escultura en el suelo (Y=0)
-          sculptureZ - sculpCenter.z               // Centro Z en el punto medio del pasillo
+          -sculpCenter.x + lateralOffset, 
+          -sculpBox.min.y,                
+          sculptureZ - sculpCenter.z      
         );
         sculpture.updateMatrixWorld(true);
 
-        // 4. Luz de acento para resaltar la escultura
         const sculptureLight = new THREE.PointLight(0xfef08a, 2.4, 14);
         sculptureLight.position.set(lateralOffset, 2.5, sculptureZ + 1.5);
 
-        // 5. Añadir al grupo interior (pasillo + escultura)
         interiorGroup.add(corridor, sculpture, sculptureLight);
 
-        // --- Ajuste de la altura de materialización y efectos ---
         const combinedBox = new THREE.Box3().setFromObject(interiorGroup);
         maxRevealHeight = Math.max(10.5, combinedBox.max.y + 0.6);
         leafMaterial.uniforms.uMaxHeight.value = maxRevealHeight;
@@ -455,7 +448,7 @@
         triggerMaterializationWave();
       } catch (e) {
         console.error('Error cargando modelos:', e);
-        document.getElementById('loading-message').textContent = 'Error al cargar modelos GLB. Verifica tu conexión.';
+        document.getElementById('loading-message').textContent = 'Error al cargar modelos GLB. Verifica tu conexión o que los archivos existan en /models/.';
       }
     }
 
@@ -483,10 +476,7 @@
       btnEnterVR.addEventListener('click', () => startXRSession('immersive-vr'));
       btnEnterAR.addEventListener('click', () => startXRSession('immersive-ar'));
 
-      // Fallback iOS: abrir Quick Look (simulado con un enlace al modelo)
       btnEnterARIos.addEventListener('click', () => {
-        // En una implementación real, aquí se redirigiría a un USDZ o se usaría <model-viewer>.
-        // Por ahora, mostramos un aviso y lanzamos el modo 3D normal.
         showToast('En iOS, usa el modo 3D o instala WebXR. Abriendo vista 3D...');
         loadingModal.classList.add('hidden');
         hudOverlay.classList.add('active');
@@ -530,12 +520,10 @@
       });
     }
 
-    // --- NUEVA FUNCIÓN: Detección de soporte AR para iOS ---
     function detectARSupport() {
       if (navigator.xr && navigator.xr.isSessionSupported) {
         navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
           if (!supported) {
-            // Si el navegador no soporta WebXR AR, mostramos el botón de fallback (iOS)
             btnEnterAR.classList.add('hidden');
             btnEnterARIos.classList.remove('hidden');
             showToast('WebXR AR no disponible. Usa el botón de iOS Quick Look.');
@@ -545,7 +533,6 @@
           btnEnterARIos.classList.remove('hidden');
         });
       } else {
-        // No hay navigator.xr (ej. Safari en iOS)
         btnEnterAR.classList.add('hidden');
         btnEnterARIos.classList.remove('hidden');
       }
