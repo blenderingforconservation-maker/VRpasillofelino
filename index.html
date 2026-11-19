@@ -299,7 +299,6 @@
             pos.x += cos(vortexAngle) * swirlRadius; pos.z += sin(vortexAngle) * swirlRadius;
             float activeCeiling = max(0.8, bandY + 1.1); pos.y = mod(pos.y + uTime * (1.15 + leafScale * 0.5), activeCeiling);
             
-            // Pulso en los 3 ejes (X, Y, Z)
             pos.x += sin(uTime * 4.0 + phase) * 0.15;
             pos.y += cos(uTime * 3.5 + phase) * 0.15;
             pos.z += sin(uTime * 5.0 + phase) * 0.15;
@@ -342,7 +341,6 @@
       magicWaveLight = new THREE.PointLight(0xfde047, 0, 14); walkStageGroup.add(magicWaveLight);
     }
 
-    // Configuración de las Luciérnagas post-materialización
     function setupFireflies() {
       const fireflyCount = 400;
       const geo = new THREE.BufferGeometry();
@@ -456,7 +454,7 @@
         totalCorridorLength = Math.abs(entranceZ - backZ);
         const sculptureZ = -(totalCorridorLength * 0.46);
 
-        // Posicionamiento de la Escultura Felina
+        // --- POSICIONAMIENTO Y FUSIÓN CON EL PISO ---
         const sculpture = gltfSculpture.scene;
         sculpture.scale.setScalar(3.2); 
         sculpture.updateMatrixWorld(true);
@@ -465,12 +463,44 @@
         const sculpCenter = sculpBox.getCenter(new THREE.Vector3());
 
         const lateralOffset = -1.2; 
+        
+        // Hundimos la escultura 8 centímetros en el piso para ocultar la base cuadrada
         sculpture.position.set(
           -sculpCenter.x + lateralOffset, 
-          -sculpBox.min.y,                
+          -sculpBox.min.y - 0.08,                
           sculptureZ - sculpCenter.z      
         );
         sculpture.updateMatrixWorld(true);
+
+        // Crear una sombra de contacto falsa para integrar visualmente
+        const shadowCanvas = document.createElement('canvas');
+        shadowCanvas.width = 128; shadowCanvas.height = 128;
+        const sCtx = shadowCanvas.getContext('2d');
+        const sGrad = sCtx.createRadialGradient(64, 64, 0, 64, 64, 64);
+        sGrad.addColorStop(0, 'rgba(0,0,0,0.9)');
+        sGrad.addColorStop(0.6, 'rgba(0,0,0,0.4)');
+        sGrad.addColorStop(1, 'rgba(0,0,0,0)');
+        sCtx.fillStyle = sGrad;
+        sCtx.fillRect(0, 0, 128, 128);
+        
+        const shadowTex = new THREE.CanvasTexture(shadowCanvas);
+        const shadowMat = new THREE.MeshBasicMaterial({ 
+            map: shadowTex, 
+            transparent: true, 
+            depthWrite: false,
+            opacity: 0.85
+        });
+        const shadowGeo = new THREE.PlaneGeometry(3.0, 3.0); // Ajusta el tamaño de la sombra aquí
+        const shadowMesh = new THREE.Mesh(shadowGeo, shadowMat);
+        shadowMesh.rotation.x = -Math.PI / 2;
+        // Colocamos la sombra a 1 cm del piso, justo debajo de la escultura
+        shadowMesh.position.set(
+            -sculpCenter.x + lateralOffset, 
+            0.01, 
+            sculptureZ - sculpCenter.z
+        );
+        interiorGroup.add(shadowMesh);
+        // ------------------------------------------
 
         const sculptureLight = new THREE.PointLight(0xfef08a, 2.4, 14);
         sculptureLight.position.set(lateralOffset, 2.5, sculptureZ + 1.5);
@@ -491,7 +521,7 @@
             mats.forEach((mat) => {
               if (!processedMaterials.has(mat)) {
                 fixCorridorMaterial(mat, maxAniso);
-                mat.clippingPlanes = [clippingPlane];
+                mat.clippingPlanes = [clippingPlane]; // La sombra también se materializará
                 mat.needsUpdate = true;
                 processedMaterials.add(mat);
               }
