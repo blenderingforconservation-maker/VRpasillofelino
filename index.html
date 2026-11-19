@@ -454,7 +454,7 @@
         totalCorridorLength = Math.abs(entranceZ - backZ);
         const sculptureZ = -(totalCorridorLength * 0.46);
 
-        // --- POSICIONAMIENTO Y FUSIÓN CON EL PISO ---
+        // --- POSICIONAMIENTO Y FUSIÓN CON EL PISO (SIN SOMBRAS FALSAS) ---
         const sculpture = gltfSculpture.scene;
         sculpture.scale.setScalar(3.2); 
         sculpture.updateMatrixWorld(true);
@@ -464,43 +464,13 @@
 
         const lateralOffset = -1.2; 
         
-        // Hundimos la escultura 8 centímetros en el piso para ocultar la base cuadrada
+        // Hundimos la escultura 20 centímetros (0.20) para que la base desaparezca bajo la roca
         sculpture.position.set(
           -sculpCenter.x + lateralOffset, 
-          -sculpBox.min.y - 0.08,                
+          -sculpBox.min.y - 0.20,                
           sculptureZ - sculpCenter.z      
         );
         sculpture.updateMatrixWorld(true);
-
-        // Crear una sombra de contacto falsa para integrar visualmente
-        const shadowCanvas = document.createElement('canvas');
-        shadowCanvas.width = 128; shadowCanvas.height = 128;
-        const sCtx = shadowCanvas.getContext('2d');
-        const sGrad = sCtx.createRadialGradient(64, 64, 0, 64, 64, 64);
-        sGrad.addColorStop(0, 'rgba(0,0,0,0.9)');
-        sGrad.addColorStop(0.6, 'rgba(0,0,0,0.4)');
-        sGrad.addColorStop(1, 'rgba(0,0,0,0)');
-        sCtx.fillStyle = sGrad;
-        sCtx.fillRect(0, 0, 128, 128);
-        
-        const shadowTex = new THREE.CanvasTexture(shadowCanvas);
-        const shadowMat = new THREE.MeshBasicMaterial({ 
-            map: shadowTex, 
-            transparent: true, 
-            depthWrite: false,
-            opacity: 0.85
-        });
-        const shadowGeo = new THREE.PlaneGeometry(3.0, 3.0); // Ajusta el tamaño de la sombra aquí
-        const shadowMesh = new THREE.Mesh(shadowGeo, shadowMat);
-        shadowMesh.rotation.x = -Math.PI / 2;
-        // Colocamos la sombra a 1 cm del piso, justo debajo de la escultura
-        shadowMesh.position.set(
-            -sculpCenter.x + lateralOffset, 
-            0.01, 
-            sculptureZ - sculpCenter.z
-        );
-        interiorGroup.add(shadowMesh);
-        // ------------------------------------------
 
         const sculptureLight = new THREE.PointLight(0xfef08a, 2.4, 14);
         sculptureLight.position.set(lateralOffset, 2.5, sculptureZ + 1.5);
@@ -521,7 +491,7 @@
             mats.forEach((mat) => {
               if (!processedMaterials.has(mat)) {
                 fixCorridorMaterial(mat, maxAniso);
-                mat.clippingPlanes = [clippingPlane]; // La sombra también se materializará
+                mat.clippingPlanes = [clippingPlane];
                 mat.needsUpdate = true;
                 processedMaterials.add(mat);
               }
