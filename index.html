@@ -454,23 +454,42 @@
         totalCorridorLength = Math.abs(entranceZ - backZ);
         const sculptureZ = -(totalCorridorLength * 0.46);
 
-        // --- AJUSTE DE POSICIÓN DE LA ESCULTURA ---
+        // --- CÁLCULO REFINADO DE POSICIÓN (ESCANEO DE VÉRTICES) ---
         const sculpture = gltfSculpture.scene;
         sculpture.scale.setScalar(3.2); 
         sculpture.updateMatrixWorld(true);
 
         const sculpBox = new THREE.Box3().setFromObject(sculpture);
         const sculpCenter = sculpBox.getCenter(new THREE.Vector3());
-
         const lateralOffset = -1.2; 
-        
-        // Ajuste: Hundimos 40cm para que las patas toquen el piso y la base desaparezca
+
+        // 1. Escanear todos los vértices para encontrar la punta real de los dedos (el punto más bajo visible)
+        let lowestVisibleY = Infinity;
+        sculpture.traverse((child) => {
+            if (child.isMesh && child.visible) {
+                const posAttr = child.geometry.attributes.position;
+                if (posAttr) {
+                    for (let i = 0; i < posAttr.count; i++) {
+                        const v = new THREE.Vector3(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
+                        v.applyMatrix4(child.matrixWorld);
+                        if (v.y < lowestVisibleY) lowestVisibleY = v.y;
+                    }
+                }
+            }
+        });
+
+        // Si por alguna razón el escaneo falla, usamos la caja delimitadora como respaldo
+        if (lowestVisibleY === Infinity) lowestVisibleY = sculpBox.min.y;
+
+        // 2. Posicionar la escultura usando el punto más bajo encontrado.
+        // Añadimos 0.02 para evitar que los dedos se hundan en la textura (Z-fighting).
         sculpture.position.set(
           -sculpCenter.x + lateralOffset, 
-          -sculpBox.min.y - 0.40,                
+          -lowestVisibleY + 0.02,                
           sculptureZ - sculpCenter.z      
         );
         sculpture.updateMatrixWorld(true);
+        // -----------------------------------------------------------
 
         const sculptureLight = new THREE.PointLight(0xfef08a, 2.4, 14);
         sculptureLight.position.set(lateralOffset, 2.5, sculptureZ + 1.5);
