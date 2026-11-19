@@ -29,17 +29,29 @@
     .font-museum { font-family: 'Cormorant Garamond', Georgia, serif; }
     #webgl-viewport { position: fixed; inset: 0; z-index: 2; cursor: grab; }
     #webgl-viewport:active { cursor: grabbing; }
+    
     #hud-overlay { position: fixed; inset: 0; z-index: 10; pointer-events: none; display: none; flex-direction: column; justify-content: space-between; padding: env(safe-area-inset-top, 14px) env(safe-area-inset-right, 16px) env(safe-area-inset-bottom, 18px) env(safe-area-inset-left, 16px); }
     #hud-overlay.active { display: flex; }
     .interactive { pointer-events: auto; }
+    
     .magic-btn { background: radial-gradient(circle at 50% 0%, rgba(163, 230, 53, 0.28), rgba(6, 28, 20, 0.90) 75%); border: 1px solid rgba(190, 242, 100, 0.45); box-shadow: 0 0 20px rgba(132, 204, 22, 0.25), inset 0 1px 1px rgba(254, 240, 138, 0.35); transition: transform 0.12s ease, border-color 0.2s ease, box-shadow 0.2s ease; }
     .magic-btn:active, .magic-btn.pressing { transform: scale(0.94); border-color: rgba(253, 224, 71, 0.95); box-shadow: 0 0 28px rgba(250, 204, 21, 0.55), inset 0 0 12px rgba(163, 230, 53, 0.45); }
     .magic-cta { background: linear-gradient(135deg, #22c55e 0%, #a3e635 50%, #facc15 100%); box-shadow: 0 0 30px rgba(163, 230, 53, 0.55), 0 0 60px rgba(250, 204, 21, 0.25); transition: transform 0.15s ease, box-shadow 0.2s ease; }
     .magic-cta:active { transform: scale(0.95); }
+    
     #toast-banner { position: fixed; top: 72px; left: 50%; transform: translateX(-50%); padding: 8px 20px; background: rgba(5, 14, 10, 0.92); border: 1px solid rgba(163, 230, 53, 0.45); border-radius: 999px; color: #ecfccb; font-size: 12px; font-weight: 500; letter-spacing: 0.03em; opacity: 0; transition: opacity 0.25s ease; pointer-events: none; text-align: center; white-space: nowrap; z-index: 30; }
+
+    /* ESTILOS NUEVOS: Flash de cámara y Joystick Virtual */
+    #flash-overlay { position: fixed; inset: 0; background: white; opacity: 0; pointer-events: none; z-index: 100; transition: opacity 0.15s ease-out; }
+    #joystick-container { position: absolute; bottom: 100px; left: 30px; width: 120px; height: 120px; display: none; pointer-events: auto; z-index: 20; }
+    #joystick-base { position: absolute; inset: 0; background: rgba(255, 255, 255, 0.1); border: 2px solid rgba(163, 230, 53, 0.4); border-radius: 50%; box-shadow: inset 0 0 20px rgba(0,0,0,0.5); backdrop-filter: blur(4px); }
+    #joystick-stick { position: absolute; top: 50%; left: 50%; width: 50px; height: 50px; margin: -25px 0 0 -25px; background: rgba(163, 230, 53, 0.8); border-radius: 50%; box-shadow: 0 0 15px rgba(163, 230, 53, 0.8); transition: transform 0.05s linear; }
   </style>
 </head>
 <body>
+
+  <!-- Efecto Flash para Captura -->
+  <div id="flash-overlay"></div>
 
   <!-- Lienzo 3D Three.js -->
   <div id="webgl-viewport"></div>
@@ -52,9 +64,7 @@
     <div class="w-14 h-14 mb-4 rounded-full bg-emerald-500/10 border border-lime-300/40 flex items-center justify-center shadow-[0_0_30px_rgba(132,204,22,0.25)]">
       <div class="w-3.5 h-3.5 rounded-full bg-yellow-300 animate-ping"></div>
     </div>
-    <!-- CAMBIO: Leyenda XR Inmersivo -->
     <span class="text-[10px] uppercase tracking-[0.3em] text-lime-300/90 font-semibold mb-1">XR Inmersivo</span>
-    <!-- CAMBIO: Título Pasillo Surrealista -->
     <h1 class="font-museum text-3xl sm:text-4xl text-stone-100 tracking-wide mb-2">Pasillo Surrealista</h1>
     <p id="loading-message" class="text-xs text-stone-400 max-w-xs mb-6 leading-relaxed">Decodificando arquitectura, roca y escultura monumental...</p>
     <div id="progress-container" class="w-64 flex flex-col items-center mb-5">
@@ -72,16 +82,29 @@
 
   <!-- INTERFAZ DE CONTROL Y LANZAMIENTO VR / AR -->
   <div id="hud-overlay">
-    <header class="w-full flex flex-wrap items-center justify-between gap-2">
+    <!-- Header -->
+    <header class="w-full flex flex-wrap items-start justify-between gap-2">
       <div class="flex items-center gap-2.5 bg-stone-950/85 border border-lime-400/35 rounded-full px-4 py-2 shadow-lg">
         <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-lime-400 animate-pulse"></span>
-        <span id="status-text" class="text-[11px] font-medium text-stone-100">Sala activa · Usa Ratón/WASD o entra en Meta Quest 3</span>
+        <span id="status-text" class="text-[11px] font-medium text-stone-100">Sala activa · Joystick o WASD</span>
       </div>
-      <div class="interactive flex items-center gap-2">
-        <button id="btn-replay-magic" class="px-3.5 py-2 rounded-full bg-stone-950/85 border border-yellow-300/40 text-yellow-200 text-[11px] font-medium active:scale-95 transition-transform">✨ Materializar Hojas</button>
+      
+      <!-- Botones de acción superior -->
+      <div class="interactive flex flex-col gap-2 items-end">
+        <button id="btn-replay-magic" class="px-3.5 py-2 rounded-full bg-stone-950/85 border border-yellow-300/40 text-yellow-200 text-[11px] font-medium active:scale-95 transition-transform">✨ Materializar</button>
+        <button id="btn-camera" class="w-10 h-10 rounded-full bg-stone-950/85 border border-lime-400/40 flex items-center justify-center text-lime-200 active:scale-90 transition-transform shadow-lg" title="Tomar captura">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        </button>
       </div>
     </header>
 
+    <!-- Joystick Virtual para Móviles / AR -->
+    <div id="joystick-container">
+      <div id="joystick-base"></div>
+      <div id="joystick-stick"></div>
+    </div>
+
+    <!-- Footer -->
     <footer class="w-full flex flex-col items-center gap-3">
       <div class="interactive flex flex-wrap items-center justify-center gap-2.5 w-full max-w-md">
         <button id="btn-enter-vr" class="magic-cta flex-1 min-w-[165px] py-3.5 px-5 rounded-full text-stone-950 font-extrabold text-xs uppercase tracking-wider flex items-center justify-center gap-2">
@@ -89,7 +112,6 @@
           <span>Entrar en VR (Quest 3)</span>
         </button>
         <button id="btn-enter-ar" class="magic-btn flex-1 min-w-[165px] py-3.5 px-5 rounded-full text-lime-200 font-semibold text-xs uppercase tracking-wider flex items-center justify-center gap-2">Modo AR (Passthrough)</button>
-        <!-- Fallback iOS -->
         <button id="btn-enter-ar-ios" class="hidden magic-btn flex-1 min-w-[165px] py-3.5 px-5 rounded-full text-lime-200 font-semibold text-xs uppercase tracking-wider flex items-center justify-center gap-2">AR (iOS Quick Look)</button>
       </div>
 
@@ -119,7 +141,7 @@
     let scene, camera, renderer, gltfLoader;
     let hallAnchorGroup, walkStageGroup, interiorGroup;
     let clippingPlane, leafParticles, leafMaterial, magicWaveRing, magicWaveLight;
-    let fireflies, fireflyMaterial; // <-- NUEVO: Variables para luciérnagas
+    let fireflies, fireflyMaterial;
 
     const controllers = [];
 
@@ -147,6 +169,12 @@
     const _localRight = new THREE.Vector3();
     const _invAnchorQuat = new THREE.Quaternion();
 
+    // NUEVO: Variables para Joystick Virtual
+    let joystickActive = false;
+    let joystickStartX = 0, joystickStartY = 0;
+    let joyX = 0, joyZ = 0;
+    const maxJoyDist = 45; 
+
     const hudOverlay = document.getElementById('hud-overlay');
     const loadingModal = document.getElementById('loading-modal');
     const launchControls = document.getElementById('launch-controls');
@@ -155,12 +183,19 @@
     const btnEnterAR = document.getElementById('btn-enter-ar');
     const btnEnterARIos = document.getElementById('btn-enter-ar-ios');
     const btnReplayMagic = document.getElementById('btn-replay-magic');
+    const btnCamera = document.getElementById('btn-camera');
     const statusText = document.getElementById('status-text');
     const btnStepForward = document.getElementById('btn-step-forward');
     const btnStepBack = document.getElementById('btn-step-back');
     const btnResetWalk = document.getElementById('btn-reset-walk');
     const distanceReadout = document.getElementById('distance-readout');
     const toastBanner = document.getElementById('toast-banner');
+    
+    // NUEVO: Elementos del Joystick
+    const joyContainer = document.getElementById('joystick-container');
+    const joyBase = document.getElementById('joystick-base');
+    const joyStick = document.getElementById('joystick-stick');
+    const flashOverlay = document.getElementById('flash-overlay');
 
     function showToast(msg) {
       toastBanner.textContent = msg;
@@ -182,7 +217,8 @@
       camera.rotation.order = 'YXZ';
       scene.add(camera);
 
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+      // CORRECCIÓN: preserveDrawingBuffer en true para poder tomar capturas
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance', preserveDrawingBuffer: true });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.xr.enabled = true;
@@ -208,10 +244,11 @@
       walkStageGroup.add(interiorGroup);
 
       setupMagicalLeafMaterialization();
-      setupFireflies(); // <-- NUEVO: Inicializar luciérnagas
+      setupFireflies(); 
       await loadModelsParallel();
 
       setupUIAndDesktopControls();
+      setupVirtualJoystick(); // NUEVO
       detectARSupport();
 
       window.addEventListener('resize', () => {
@@ -301,7 +338,6 @@
             pos.x += cos(vortexAngle) * swirlRadius; pos.z += sin(vortexAngle) * swirlRadius;
             float activeCeiling = max(0.8, bandY + 1.1); pos.y = mod(pos.y + uTime * (1.15 + leafScale * 0.5), activeCeiling);
             
-            // NUEVO: Pulso en los 3 ejes (X, Y, Z)
             pos.x += sin(uTime * 4.0 + phase) * 0.15;
             pos.y += cos(uTime * 3.5 + phase) * 0.15;
             pos.z += sin(uTime * 5.0 + phase) * 0.15;
@@ -344,7 +380,6 @@
       magicWaveLight = new THREE.PointLight(0xfde047, 0, 14); walkStageGroup.add(magicWaveLight);
     }
 
-    // NUEVO: Configuración de las Luciérnagas post-materialización
     function setupFireflies() {
       const fireflyCount = 400;
       const geo = new THREE.BufferGeometry();
@@ -352,10 +387,9 @@
       const seeds = new Float32Array(fireflyCount);
 
       for (let i = 0; i < fireflyCount; i++) {
-        // Distribuir en todo el volumen del pasillo
-        positions[i * 3] = (Math.random() - 0.5) * 4.0; // X
-        positions[i * 3 + 1] = Math.random() * 5.0 + 0.5; // Y
-        positions[i * 3 + 2] = -Math.random() * 15.0;     // Z
+        positions[i * 3] = (Math.random() - 0.5) * 4.0;
+        positions[i * 3 + 1] = Math.random() * 5.0 + 0.5;
+        positions[i * 3 + 2] = -Math.random() * 15.0;
         seeds[i] = Math.random() * 100.0;
       }
 
@@ -363,36 +397,22 @@
       geo.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1));
 
       fireflyMaterial = new THREE.ShaderMaterial({
-        transparent: true,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        uniforms: {
-          uTime: { value: 0 },
-          uPixelRatio: { value: renderer.getPixelRatio() }
-        },
+        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+        uniforms: { uTime: { value: 0 }, uPixelRatio: { value: renderer.getPixelRatio() } },
         vertexShader: `
           attribute float aSeed;
-          uniform float uTime;
-          uniform float uPixelRatio;
+          uniform float uTime; uniform float uPixelRatio;
           varying float vAlpha;
-
           void main() {
             vec3 pos = position;
             float speed = 0.5 + fract(aSeed) * 0.5;
-            
-            // Movimiento flotante suave en 3 ejes
             pos.x += sin(uTime * speed + aSeed * 10.0) * 0.6;
             pos.y += cos(uTime * speed * 0.8 + aSeed * 20.0) * 0.4;
             pos.z += sin(uTime * speed * 1.2 + aSeed * 30.0) * 0.6;
-
             vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
             gl_Position = projectionMatrix * mvPosition;
-
-            // Pulso de tamaño y opacidad
             float pulse = 0.5 + 0.5 * sin(uTime * 4.0 + aSeed * 50.0);
             vAlpha = 0.2 + 0.8 * pulse;
-            
-            // Tamaño dependiente de la distancia
             gl_PointSize = (25.0 * uPixelRatio * (0.5 + 0.5 * pulse)) / max(-mvPosition.z, 0.5);
           }
         `,
@@ -403,8 +423,6 @@
             float dist = length(centered);
             float alpha = smoothstep(0.5, 0.0, dist);
             if (alpha < 0.05) discard;
-            
-            // Color jade claro brillante
             vec3 jadeColor = vec3(0.0, 1.0, 0.8); 
             gl_FragColor = vec4(jadeColor * 2.0, alpha * vAlpha);
           }
@@ -413,7 +431,7 @@
 
       fireflies = new THREE.Points(geo, fireflyMaterial);
       fireflies.frustumCulled = false;
-      fireflies.visible = false; // Ocultas hasta que termine la materialización
+      fireflies.visible = false;
       walkStageGroup.add(fireflies);
     }
 
@@ -477,7 +495,6 @@
 
         // --- Posicionamiento de la Escultura Felina ---
         const sculpture = gltfSculpture.scene;
-        // CAMBIO: Altura reducida para coincidir con el marco de la ventana
         sculpture.scale.setScalar(3.2); 
         sculpture.updateMatrixWorld(true);
 
@@ -487,10 +504,26 @@
         const lateralOffset = -1.2; 
         sculpture.position.set(
           -sculpCenter.x + lateralOffset, 
-          -sculpBox.min.y,                
+          -sculpBox.min.y - 0.03, // NUEVO: Hundida 3cm para fusionarse con el piso                
           sculptureZ - sculpCenter.z      
         );
         sculpture.updateMatrixWorld(true);
+
+        // NUEVO: Sombra de contacto para integrar la base con el suelo
+        const canvas = document.createElement('canvas');
+        canvas.width = 128; canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+        grad.addColorStop(0, 'rgba(0,0,0,0.8)');
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, 128, 128);
+        const shadowTex = new THREE.CanvasTexture(canvas);
+        const shadowMat = new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false, blending: THREE.NormalBlending });
+        const shadowPlane = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 2.5), shadowMat);
+        shadowPlane.rotation.x = -Math.PI / 2;
+        shadowPlane.position.set(sculpture.position.x, 0.01, sculpture.position.z);
+        interiorGroup.add(shadowPlane);
 
         const sculptureLight = new THREE.PointLight(0xfef08a, 2.4, 14);
         sculptureLight.position.set(lateralOffset, 2.5, sculptureZ + 1.5);
@@ -544,13 +577,71 @@
       leafMaterial.uniforms.uProgress.value = 0;
       leafMaterial.uniforms.uOpacity.value = 1.0;
       
-      // Aseguramos que las luciérnagas se oculten al reiniciar
       fireflies.visible = false;
 
       magicWaveRing.visible = true;
       magicWaveRing.material.opacity = 0.85;
       magicWaveLight.intensity = 4.5;
       showToast('✨ Materializando Pasillo y Escultura...');
+    }
+
+    // NUEVO: Lógica del Joystick Virtual (ideal para AR Móvil)
+    function setupVirtualJoystick() {
+      // Mostrar joystick solo en dispositivos táctiles (o siempre en móviles)
+      if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+        joyContainer.style.display = 'block';
+      }
+
+      joyBase.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        joystickActive = true;
+        joystickStartX = e.clientX;
+        joystickStartY = e.clientY;
+        joyBase.setPointerCapture(e.pointerId);
+      });
+
+      joyBase.addEventListener('pointermove', (e) => {
+        if (!joystickActive) return;
+        e.preventDefault();
+        
+        let dx = e.clientX - joystickStartX;
+        let dy = e.clientY - joystickStartY;
+        let dist = Math.min(Math.hypot(dx, dy), maxJoyDist);
+        let angle = Math.atan2(dy, dx);
+        
+        // Normalizar entre -1 y 1
+        joyX = (Math.cos(angle) * dist) / maxJoyDist;
+        joyZ = (Math.sin(angle) * dist) / maxJoyDist;
+        
+        joyStick.style.transform = `translate(${joyX * maxJoyDist}px, ${joyZ * maxJoyDist}px)`;
+      });
+
+      const resetJoy = (e) => {
+        if(!joystickActive) return;
+        joystickActive = false;
+        joyX = 0; joyZ = 0;
+        joyStick.style.transform = `translate(0px, 0px)`;
+      };
+      joyBase.addEventListener('pointerup', resetJoy);
+      joyBase.addEventListener('pointercancel', resetJoy);
+    }
+
+    // NUEVO: Lógica para tomar capturas
+    function takeScreenshot() {
+      // Efecto visual de flash
+      flashOverlay.style.opacity = '1';
+      setTimeout(() => { flashOverlay.style.opacity = '0'; }, 150);
+
+      // Tomar la captura del canvas
+      const dataURL = renderer.domElement.toDataURL('image/png');
+      
+      // Crear enlace de descarga
+      const link = document.createElement('a');
+      link.download = `Pasillo_Surrealista_${Date.now()}.png`;
+      link.href = dataURL;
+      link.click();
+      
+      showToast('📸 Captura guardada');
     }
 
     function setupUIAndDesktopControls() {
@@ -560,6 +651,8 @@
         triggerMaterializationWave();
       });
       btnReplayMagic.addEventListener('click', triggerMaterializationWave);
+      btnCamera.addEventListener('click', takeScreenshot); // NUEVO
+      
       btnEnterVR.addEventListener('click', () => startXRSession('immersive-vr'));
       btnEnterAR.addEventListener('click', () => startXRSession('immersive-ar'));
 
@@ -578,7 +671,7 @@
         btn.addEventListener('pointerup', stopPress); btn.addEventListener('pointerleave', stopPress); btn.addEventListener('pointercancel', stopPress);
       };
       bindWalkButton(btnStepForward, 1); bindWalkButton(btnStepBack, -1);
-      btnResetWalk.addEventListener('click', () => { targetWalkOffset.set(0, 0, 0); showToast('Regresando a la entrada del pasillo'); });
+      btnResetWalk.addEventListener('click', () => { targetWalkOffset.set(0, 0, 0); showToast('Regresando a la entrada'); });
 
       const viewport = document.getElementById('webgl-viewport');
       viewport.addEventListener('pointerdown', (e) => { isPointerDown = true; prevPointerX = e.clientX; prevPointerY = e.clientY; });
@@ -665,14 +758,14 @@
     async function startXRSession(requestedMode = 'immersive-vr') {
       loadingModal.classList.add('hidden');
       hudOverlay.classList.add('active');
-      if (!navigator.xr) { showToast('WebXR no detectado en este navegador · Modo 3D activo'); return; }
+      if (!navigator.xr) { showToast('WebXR no detectado · Modo 3D activo'); return; }
       try {
         let mode = requestedMode; let supported = await navigator.xr.isSessionSupported(mode);
         if (!supported) {
           const fallback = mode === 'immersive-vr' ? 'immersive-ar' : 'immersive-vr';
           if (await navigator.xr.isSessionSupported(fallback)) { mode = fallback; supported = true; }
         }
-        if (!supported) { showToast('Visor XR no conectado · Explorando en pantalla 3D'); return; }
+        if (!supported) { showToast('Visor XR no conectado · Modo 3D activo'); return; }
         const session = await navigator.xr.requestSession(mode, {
           optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking', 'dom-overlay'],
           domOverlay: { root: hudOverlay }
@@ -700,12 +793,21 @@
       const dt = Math.min(0.05, (timestamp - lastFrameTime) / 1000 || 0.016);
       lastFrameTime = timestamp;
       const timeSec = timestamp * 0.001;
+      
       processQuestThumbsticks(dt);
+
+      // NUEVO: Procesar Joystick Virtual
+      if (joystickActive || (Math.abs(joyX) > 0.05 || Math.abs(joyZ) > 0.05)) {
+        // joystick Y positivo es abajo, por eso invertimos joyZ
+        advanceAlongViewDirection(-joyZ * 4.0 * dt, joyX * 3.0 * dt);
+      }
+
       if (moveButtonDir !== 0) advanceAlongViewDirection(moveButtonDir * 4.4 * dt, 0);
       if (keysPressed.forward) advanceAlongViewDirection(4.2 * dt, 0);
       if (keysPressed.back) advanceAlongViewDirection(-4.2 * dt, 0);
       if (keysPressed.left) advanceAlongViewDirection(0, -3.2 * dt);
       if (keysPressed.right) advanceAlongViewDirection(0, 3.2 * dt);
+      
       currentWalkOffset.lerp(targetWalkOffset, Math.min(1, dt * 8.5));
       walkStageGroup.position.set(currentWalkOffset.x, 0, currentWalkOffset.z);
       distanceReadout.textContent = `${currentWalkOffset.z.toFixed(1)} m`;
@@ -731,19 +833,15 @@
           clippingPlane.constant = 1000;
           magicWaveRing.visible = false; 
           magicWaveLight.intensity = 0;
-          
-          // CAMBIO: Ocultar hojas y mostrar luciérnagas al terminar
           leafParticles.visible = false;
           fireflies.visible = true;
-          
-          statusText.textContent = 'Pasillo materializado · Camina con Joysticks, WASD o Botones';
+          statusText.textContent = 'Pasillo materializado · Explora libremente';
         }
       } else if (leafParticles && leafParticles.visible) {
         leafMaterial.uniforms.uTime.value = timeSec * 0.65;
         leafMaterial.uniforms.uOpacity.value = Math.max(0.45, leafMaterial.uniforms.uOpacity.value - dt * 0.25);
       }
 
-      // NUEVO: Actualizar animación de luciérnagas si están visibles
       if (fireflies && fireflies.visible) {
         fireflyMaterial.uniforms.uTime.value = timeSec;
       }
