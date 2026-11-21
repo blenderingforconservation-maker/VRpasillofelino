@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -108,7 +109,7 @@
     import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
     import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 
-    const REPO_RAW_BASE = './'; 
+    const REPO_RAW_BASE = './';
     const MODELS = {
       corridor: `${REPO_RAW_BASE}models/pasillo_optimizado.glb`,
       sculpture: `${REPO_RAW_BASE}models/escultura_felina_webAR_optimizado.glb`
@@ -117,7 +118,7 @@
     let scene, camera, renderer, gltfLoader;
     let hallAnchorGroup, walkStageGroup, interiorGroup;
     let clippingPlane, leafParticles, leafMaterial, magicWaveRing, magicWaveLight;
-    let fireflies, fireflyMaterial; 
+    let fireflies, fireflyMaterial;
 
     const controllers = [];
 
@@ -206,7 +207,7 @@
       walkStageGroup.add(interiorGroup);
 
       setupMagicalLeafMaterialization();
-      setupFireflies(); 
+      setupFireflies();
       await loadModelsParallel();
 
       setupUIAndDesktopControls();
@@ -298,7 +299,7 @@
             float vortexAngle = uTime * 2.2 + phase + pos.y * 0.65; float swirlRadius = 0.28 + 0.18 * sin(uTime * 1.7 + phase);
             pos.x += cos(vortexAngle) * swirlRadius; pos.z += sin(vortexAngle) * swirlRadius;
             float activeCeiling = max(0.8, bandY + 1.1); pos.y = mod(pos.y + uTime * (1.15 + leafScale * 0.5), activeCeiling);
-            
+
             pos.x += sin(uTime * 4.0 + phase) * 0.15;
             pos.y += cos(uTime * 3.5 + phase) * 0.15;
             pos.z += sin(uTime * 5.0 + phase) * 0.15;
@@ -341,51 +342,139 @@
       magicWaveLight = new THREE.PointLight(0xfde047, 0, 14); walkStageGroup.add(magicWaveLight);
     }
 
+    /*
+      LUCIÉRNAGAS GPU PARA QUEST 3
+      - Una sola llamada de dibujo (THREE.Points), sin crear una luz por partícula.
+      - Destellos individuales con pausas y duraciones aleatorias.
+      - Paleta bioluminiscente amarillo-verde / dorado, con núcleo cálido y halo suave.
+      - Deriva tridimensional lenta calculada en el vertex shader.
+    */
     function setupFireflies() {
-      const fireflyCount = 400;
+      const fireflyCount = 280;
       const geo = new THREE.BufferGeometry();
       const positions = new Float32Array(fireflyCount * 3);
       const seeds = new Float32Array(fireflyCount);
+      const traits = new Float32Array(fireflyCount * 4);
+      const colors = new Float32Array(fireflyCount * 3);
+
+      const fireflyPalette = [
+        new THREE.Color('#efff9b'),
+        new THREE.Color('#f8f59a'),
+        new THREE.Color('#fff0a8'),
+        new THREE.Color('#ffdf78'),
+        new THREE.Color('#e8f58b')
+      ];
 
       for (let i = 0; i < fireflyCount; i++) {
-        positions[i * 3] = (Math.random() - 0.5) * 4.0;
-        positions[i * 3 + 1] = Math.random() * 5.0 + 0.5;
-        positions[i * 3 + 2] = -Math.random() * 15.0;
+        // Distribución volumétrica a lo largo del pasillo.
+        positions[i * 3] = (Math.random() - 0.5) * 4.2;
+        positions[i * 3 + 1] = 0.35 + Math.random() * 5.0;
+        positions[i * 3 + 2] = -Math.random() * 14.5;
+
         seeds[i] = Math.random() * 100.0;
+
+        // phase: desfase individual; period: intervalo entre destellos;
+        // duration: fracción del ciclo encendida; size: tamaño aparente base.
+        traits[i * 4] = Math.random();
+        traits[i * 4 + 1] = 2.8 + Math.random() * 3.8;
+        traits[i * 4 + 2] = 0.085 + Math.random() * 0.095;
+        traits[i * 4 + 3] = 19.0 + Math.random() * 12.0;
+
+        const color = fireflyPalette[Math.floor(Math.random() * fireflyPalette.length)];
+        colors[i * 3] = color.r;
+        colors[i * 3 + 1] = color.g;
+        colors[i * 3 + 2] = color.b;
       }
 
       geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
       geo.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1));
+      geo.setAttribute('aTraits', new THREE.BufferAttribute(traits, 4));
+      geo.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
 
       fireflyMaterial = new THREE.ShaderMaterial({
-        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-        uniforms: { uTime: { value: 0 }, uPixelRatio: { value: renderer.getPixelRatio() } },
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false,
+        uniforms: {
+          uTime: { value: 0 },
+          uPixelRatio: { value: renderer.getPixelRatio() },
+          uOpacity: { value: 0.88 }
+        },
         vertexShader: `
           attribute float aSeed;
-          uniform float uTime; uniform float uPixelRatio;
-          varying float vAlpha;
+          attribute vec4 aTraits;
+          attribute vec3 aColor;
+
+          uniform float uTime;
+          uniform float uPixelRatio;
+
+          varying float vPulse;
+          varying vec3 vColor;
+
           void main() {
             vec3 pos = position;
-            float speed = 0.5 + fract(aSeed) * 0.5;
-            pos.x += sin(uTime * speed + aSeed * 10.0) * 0.6;
-            pos.y += cos(uTime * speed * 0.8 + aSeed * 20.0) * 0.4;
-            pos.z += sin(uTime * speed * 1.2 + aSeed * 30.0) * 0.6;
+            float seed = aSeed;
+
+            // Movimiento orgánico: pequeñas derivas independientes en los tres ejes.
+            pos.x += sin(uTime * 0.48 + seed * 0.73) * 0.24
+                   + cos(uTime * 0.19 + seed * 1.31) * 0.10;
+            pos.y += sin(uTime * 0.62 + seed * 0.47) * 0.17
+                   + cos(uTime * 0.27 + seed * 1.70) * 0.08;
+            pos.z += cos(uTime * 0.38 + seed * 0.91) * 0.18;
+
+            // Cada luciérnaga tiene su propio intervalo, duración y desfase.
+            float phase = fract(uTime / aTraits.y + aTraits.x);
+            float flash = 0.0;
+            if (phase < aTraits.z) {
+              float pulseT = phase / max(aTraits.z, 0.001);
+              float attack = smoothstep(0.0, 0.12, pulseT);
+              float decay = 1.0 - smoothstep(0.30, 1.0, pulseT);
+              flash = attack * decay;
+            }
+
+            // Casi apagadas entre destellos; leve variación para evitar un apagado artificial.
+            float idleGlow = 0.018 + 0.012 * (0.5 + 0.5 * sin(uTime * 1.7 + seed * 2.4));
+            float microFlicker = 0.96 + 0.04 * sin(uTime * 8.0 + seed * 3.7);
+            vPulse = clamp((idleGlow + flash * 0.98) * microFlicker, 0.0, 1.0);
+            vColor = aColor;
+
             vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
             gl_Position = projectionMatrix * mvPosition;
-            float pulse = 0.5 + 0.5 * sin(uTime * 4.0 + aSeed * 50.0);
-            vAlpha = 0.2 + 0.8 * pulse;
-            gl_PointSize = (25.0 * uPixelRatio * (0.5 + 0.5 * pulse)) / max(-mvPosition.z, 0.5);
+
+            float apparentSize = aTraits.w * (0.78 + vPulse * 0.34);
+            gl_PointSize = clamp(
+              (apparentSize * uPixelRatio) / max(-mvPosition.z, 0.70),
+              1.5,
+              26.0
+            );
           }
         `,
         fragmentShader: `
-          varying float vAlpha;
+          uniform float uOpacity;
+          varying float vPulse;
+          varying vec3 vColor;
+
           void main() {
-            vec2 centered = gl_PointCoord - vec2(0.5);
-            float dist = length(centered);
-            float alpha = smoothstep(0.5, 0.0, dist);
-            if (alpha < 0.05) discard;
-            vec3 jadeColor = vec3(0.0, 1.0, 0.8); 
-            gl_FragColor = vec4(jadeColor * 2.0, alpha * vAlpha);
+            // Gradiente radial multicapa: halo atmosférico, aureola y núcleo luminoso.
+            vec2 p = (gl_PointCoord - vec2(0.5)) * 2.0;
+            float dist = length(p);
+
+            float outerHalo = exp(-dist * dist * 7.0);
+            float innerGlow = exp(-dist * dist * 25.0);
+            float hotCore = 1.0 - smoothstep(0.035, 0.20, dist);
+
+            float glow = (outerHalo * 0.17 + innerGlow * 0.28 + hotCore * 0.92) * vPulse;
+            if (glow < 0.004) discard;
+
+            // La periferia conserva el matiz amarillo-verde de la bioluminiscencia;
+            // el centro se acerca al amarillo marfil de un abdomen encendido.
+            vec3 edgeColor = mix(vec3(1.00, 0.67, 0.22), vColor, 0.58);
+            vec3 midColor = mix(edgeColor, vec3(1.00, 0.84, 0.43), 0.38);
+            vec3 coreColor = mix(midColor, vec3(1.00, 0.98, 0.78), hotCore * 0.88);
+
+            float emission = 0.48 + vPulse * 1.25;
+            gl_FragColor = vec4(coreColor * emission, glow * uOpacity);
           }
         `
       });
@@ -393,6 +482,7 @@
       fireflies = new THREE.Points(geo, fireflyMaterial);
       fireflies.frustumCulled = false;
       fireflies.visible = false;
+      fireflies.renderOrder = 2;
       walkStageGroup.add(fireflies);
     }
 
@@ -456,37 +546,34 @@
 
         // --- CÁLCULO REFINADO DE POSICIÓN (ESCANEO DE VÉRTICES) ---
         const sculpture = gltfSculpture.scene;
-        sculpture.scale.setScalar(3.2); 
+        sculpture.scale.setScalar(3.2);
         sculpture.updateMatrixWorld(true);
 
         const sculpBox = new THREE.Box3().setFromObject(sculpture);
         const sculpCenter = sculpBox.getCenter(new THREE.Vector3());
-        const lateralOffset = -1.2; 
+        const lateralOffset = -1.2;
 
-        // 1. Escanear todos los vértices para encontrar la punta real de los dedos (el punto más bajo visible)
+        // Escanear todos los vértices para encontrar el punto más bajo visible.
         let lowestVisibleY = Infinity;
         sculpture.traverse((child) => {
-            if (child.isMesh && child.visible) {
-                const posAttr = child.geometry.attributes.position;
-                if (posAttr) {
-                    for (let i = 0; i < posAttr.count; i++) {
-                        const v = new THREE.Vector3(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
-                        v.applyMatrix4(child.matrixWorld);
-                        if (v.y < lowestVisibleY) lowestVisibleY = v.y;
-                    }
-                }
+          if (child.isMesh && child.visible) {
+            const posAttr = child.geometry.attributes.position;
+            if (posAttr) {
+              for (let i = 0; i < posAttr.count; i++) {
+                const v = new THREE.Vector3(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
+                v.applyMatrix4(child.matrixWorld);
+                if (v.y < lowestVisibleY) lowestVisibleY = v.y;
+              }
             }
+          }
         });
 
-        // Si por alguna razón el escaneo falla, usamos la caja delimitadora como respaldo
         if (lowestVisibleY === Infinity) lowestVisibleY = sculpBox.min.y;
 
-        // 2. Posicionar la escultura usando el punto más bajo encontrado.
-        // Añadimos 0.02 para evitar que los dedos se hundan en la textura (Z-fighting).
         sculpture.position.set(
-          -sculpCenter.x + lateralOffset, 
-          -lowestVisibleY + 0.02,                
-          sculptureZ - sculpCenter.z      
+          -sculpCenter.x + lateralOffset,
+          -lowestVisibleY + 0.02,
+          sculptureZ - sculpCenter.z
         );
         sculpture.updateMatrixWorld(true);
         // -----------------------------------------------------------
@@ -538,11 +625,11 @@
       isMaterializing = true;
       materializationT = 0;
       clippingPlane.constant = hallAnchorGroup.position.y + 0.05;
-      
+
       leafParticles.visible = true;
       leafMaterial.uniforms.uProgress.value = 0;
       leafMaterial.uniforms.uOpacity.value = 1.0;
-      
+
       fireflies.visible = false;
 
       magicWaveRing.visible = true;
@@ -707,7 +794,7 @@
       currentWalkOffset.lerp(targetWalkOffset, Math.min(1, dt * 8.5));
       walkStageGroup.position.set(currentWalkOffset.x, 0, currentWalkOffset.z);
       distanceReadout.textContent = `${currentWalkOffset.z.toFixed(1)} m`;
-      
+
       if (isMaterializing) {
         materializationT = Math.min(1, materializationT + dt * 0.28);
         const eased = 1 - Math.pow(1 - materializationT, 3);
@@ -722,17 +809,17 @@
         magicWaveRing.material.opacity = (1.0 - materializationT) * 0.85;
         magicWaveLight.position.set(0, Math.min(revealH + 0.5, 6.5), -(totalCorridorLength * 0.42));
         magicWaveLight.intensity = (1.0 - materializationT * 0.7) * 5.0;
-        
+
         if (materializationT >= 1) {
-          isMaterializing = false; 
-          renderer.localClippingEnabled = false; 
+          isMaterializing = false;
+          renderer.localClippingEnabled = false;
           clippingPlane.constant = 1000;
-          magicWaveRing.visible = false; 
+          magicWaveRing.visible = false;
           magicWaveLight.intensity = 0;
-          
+
           leafParticles.visible = false;
           fireflies.visible = true;
-          
+
           statusText.textContent = 'Pasillo materializado · Camina con Joysticks, WASD o Botones';
         }
       } else if (leafParticles && leafParticles.visible) {
