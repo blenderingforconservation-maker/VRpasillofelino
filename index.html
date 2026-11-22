@@ -73,7 +73,7 @@
     <header class="w-full flex flex-wrap items-center justify-between gap-2">
       <div class="flex items-center gap-2.5 bg-stone-950/85 border border-lime-400/35 rounded-full px-4 py-2 shadow-lg">
         <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-lime-400 animate-pulse"></span>
-        <span id="status-text" class="text-[11px] font-medium text-stone-100">Sala activa · Busca el artefacto oculto al fondo</span>
+        <span id="status-text" class="text-[11px] font-medium text-stone-100">Sala activa · Busca el artefacto detrás de la reja</span>
       </div>
       <div class="interactive flex items-center gap-2">
         <button id="btn-replay-magic" class="px-3.5 py-2 rounded-full bg-stone-950/85 border border-yellow-300/40 text-yellow-200 text-[11px] font-medium active:scale-95 transition-transform">✨ Materializar Hojas</button>
@@ -139,7 +139,7 @@
     let sculptureGroup = null;
     let sculptureLocalBox = new THREE.Box3();
     let sculptureCenterLocal = new THREE.Vector3();
-    let sculptureOrbitRadius = 0.95;
+    let sculptureOrbitRadius = 0.98;
     let sculptureLight = null;
     let sculptureAwakenLight = null;
     const sculptureMaterialStates = [];
@@ -154,11 +154,21 @@
     let awakenParticles = null;
     let awakenParticleMat = null;
 
+    // Estela de partículas de brillo fino que deja el objeto al orbitar
+    const TRAIL_COUNT = 160;
+    let trailPoints = null;
+    let trailPositions = null;
+    let trailLives = null;
+    let trailMaxLives = null;
+    let trailSizes = null;
+    let trailCursor = 0;
+    let trailSpawnAccum = 0;
+
     let artifactState = ARTIFACT_STATE.EXPLORACION;
     let carryingMode = null; // 'xr' | 'camera' | null
     let carryingController = null;
     let orbitAngle = 0;
-    let awakeningT = 0;
+    let awakeningElapsed = 0; // Temporizador para que la escultura brille solo unos segundos
     let lastHapticTime = 0;
 
     const controllers = [];
@@ -244,7 +254,7 @@
       unlockAudio();
       if (!audioCtx) return;
       const now = audioCtx.currentTime;
-      const notes = [587.33, 739.99, 880.0, 1174.66]; // D5, F#5, A5, D6
+      const notes = [587.33, 739.99, 880.0, 1174.66];
       notes.forEach((freq, idx) => {
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
@@ -264,7 +274,7 @@
       unlockAudio();
       if (!audioCtx) return;
       const now = audioCtx.currentTime;
-      const freqs = [146.83, 220.0, 293.66, 369.99, 554.37, 659.25]; // Acorde Dmaj9 místico
+      const freqs = [146.83, 220.0, 293.66, 369.99, 554.37, 659.25];
       freqs.forEach((freq, i) => {
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
@@ -298,7 +308,6 @@
         },
         undefined,
         () => {
-          // Sin archivo MP3 aún: se usará el narrador Web Speech API automáticamente
           narrationAudioLoaded = false;
         }
       );
@@ -382,6 +391,7 @@
 
       setupMagicalLeafMaterialization();
       setupFireflies();
+      setupGyroTrailParticles();
       await loadModelsParallel();
 
       setupUIAndDesktopControls();
@@ -413,7 +423,7 @@
     function setupQuestControllers() {
       const lineGeo = new THREE.BufferGeometry().setFromPoints([
         new THREE.Vector3(0, 0, 0),
-        new THREE.Vector3(0, 0, -3.5)
+        new THREE.Vector3(0, 0, -4.5)
       ]);
       for (let i = 0; i < 2; i++) {
         const controller = renderer.xr.getController(i);
@@ -432,7 +442,6 @@
         controller.addEventListener('selectstart', () => {
           const grabbed = handleGrabAttempt();
           if (!grabbed && artifactState === ARTIFACT_STATE.EXPLORACION) {
-            // Solo re-materializa si no estaba intentando tomar el artefacto
             if (!isControllerPointingAtGyro(controller)) {
               triggerMaterializationWave();
             }
@@ -446,24 +455,22 @@
       }
     }
 
+    // El raycast evalúa solo gyroHitSphere: atraviesa la reja sin bloqueo para poder tomarlo fácilmente
     function isControllerPointingAtGyro(controller) {
       if (!gyroHitSphere || artifactState !== ARTIFACT_STATE.EXPLORACION) return false;
       _tempMatrix.identity().extractRotation(controller.matrixWorld);
       raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
       raycaster.ray.direction.set(0, 0, -1).applyMatrix4(_tempMatrix);
-      raycaster.far = 5.0;
+      raycaster.far = 8.5;
       return raycaster.intersectObject(gyroHitSphere, false).length > 0;
     }
 
     function tryGrabGyroWithController(controller) {
       if (!gyroGroup || !gyroHitSphere || artifactState !== ARTIFACT_STATE.EXPLORACION) return false;
 
-      // 1. Agarre directo por cercanía de la mano (<= 55 cm)
       controller.getWorldPosition(_tempVecA);
       gyroGroup.getWorldPosition(_tempVecB);
-      const directReach = _tempVecA.distanceTo(_tempVecB) <= 0.55;
-
-      // 2. Agarre ergonómico a distancia con rayo (evita agacharse al suelo)
+      const directReach = _tempVecA.distanceTo(_tempVecB) <= 0.75;
       const rayHit = isControllerPointingAtGyro(controller);
 
       if (directReach || rayHit) {
@@ -485,7 +492,7 @@
       pointerNDC.x = (clientX / window.innerWidth) * 2 - 1;
       pointerNDC.y = -(clientY / window.innerHeight) * 2 + 1;
       raycaster.setFromCamera(pointerNDC, camera);
-      raycaster.far = 18.0;
+      raycaster.far = 22.0;
       if (raycaster.intersectObject(gyroHitSphere, false).length > 0) {
         unlockAudio();
         artifactState = ARTIFACT_STATE.PORTANDO;
@@ -679,7 +686,108 @@
       walkStageGroup.add(fireflies);
     }
 
-    // Partículas doradas ascendentes alrededor de la escultura al despertar (1 draw call)
+    // Estela de polvo/brillo fino que deja el giroscopio al orbitar y se desvanece suavemente
+    function setupGyroTrailParticles() {
+      const geo = new THREE.BufferGeometry();
+      trailPositions = new Float32Array(TRAIL_COUNT * 3);
+      trailLives = new Float32Array(TRAIL_COUNT);
+      trailMaxLives = new Float32Array(TRAIL_COUNT);
+      trailSizes = new Float32Array(TRAIL_COUNT);
+
+      for (let i = 0; i < TRAIL_COUNT; i++) {
+        trailLives[i] = 0;
+        trailMaxLives[i] = 1;
+        trailSizes[i] = 8.0 + Math.random() * 8.0;
+      }
+
+      geo.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+      geo.setAttribute('aLife', new THREE.BufferAttribute(trailLives, 1));
+      geo.setAttribute('aSize', new THREE.BufferAttribute(trailSizes, 1));
+
+      const mat = new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false,
+        uniforms: {
+          uPixelRatio: { value: renderer.getPixelRatio() }
+        },
+        vertexShader: `
+          attribute float aLife;
+          attribute float aSize;
+          uniform float uPixelRatio;
+          varying float vLife;
+          void main() {
+            vLife = aLife;
+            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+            gl_Position = projectionMatrix * mvPosition;
+            float size = aSize * (0.35 + 0.65 * aLife);
+            gl_PointSize = clamp((size * uPixelRatio) / max(-mvPosition.z, 0.45), 1.0, 18.0) * step(0.005, aLife);
+          }
+        `,
+        fragmentShader: `
+          varying float vLife;
+          void main() {
+            if (vLife <= 0.005) discard;
+            vec2 p = (gl_PointCoord - vec2(0.5)) * 2.0;
+            float d = length(p);
+            float core = exp(-d * d * 8.0);
+            float star = max(0.0, 1.0 - abs(p.x * p.y) * 14.0) * exp(-d * d * 3.5);
+            float alpha = (core * 0.85 + star * 0.45) * (vLife * vLife);
+            if (alpha < 0.01) discard;
+            vec3 col = mix(vec3(1.0, 0.78, 0.22), vec3(1.0, 0.99, 0.86), core);
+            gl_FragColor = vec4(col * 1.5, alpha);
+          }
+        `
+      });
+
+      trailPoints = new THREE.Points(geo, mat);
+      trailPoints.frustumCulled = false;
+      trailPoints.visible = false;
+      trailPoints.renderOrder = 3;
+      interiorGroup.add(trailPoints);
+    }
+
+    function updateGyroTrail(dt, emitPos) {
+      if (!trailPoints) return;
+
+      let anyAlive = false;
+      for (let i = 0; i < TRAIL_COUNT; i++) {
+        if (trailLives[i] > 0) {
+          trailLives[i] = Math.max(0, trailLives[i] - dt / trailMaxLives[i]);
+          // Deriva muy sutil hacia arriba al desvanecerse
+          trailPositions[i * 3 + 1] += dt * 0.08;
+          if (trailLives[i] > 0) anyAlive = true;
+        }
+      }
+
+      if (emitPos) {
+        trailSpawnAccum += dt;
+        const spawnInterval = 0.022;
+        while (trailSpawnAccum >= spawnInterval) {
+          trailSpawnAccum -= spawnInterval;
+          const idx = trailCursor;
+          trailCursor = (trailCursor + 1) % TRAIL_COUNT;
+
+          trailPositions[idx * 3] = emitPos.x + (Math.random() - 0.5) * 0.14;
+          trailPositions[idx * 3 + 1] = emitPos.y + (Math.random() - 0.5) * 0.14;
+          trailPositions[idx * 3 + 2] = emitPos.z + (Math.random() - 0.5) * 0.14;
+          trailMaxLives[idx] = 1.05 + Math.random() * 0.65;
+          trailLives[idx] = 1.0;
+          trailSizes[idx] = 6.5 + Math.random() * 7.5;
+          anyAlive = true;
+        }
+      }
+
+      trailPoints.visible = anyAlive;
+      if (anyAlive) {
+        trailPoints.geometry.attributes.position.needsUpdate = true;
+        trailPoints.geometry.attributes.aLife.needsUpdate = true;
+        trailPoints.geometry.attributes.aSize.needsUpdate = true;
+      }
+    }
+
+    // Partículas doradas ascendentes alrededor de la escultura durante el destello inicial
     function setupAwakeningParticles(centerLocal, radiusXZ, height) {
       const count = 160;
       const geo = new THREE.BufferGeometry();
@@ -807,6 +915,20 @@
         const corridorWidth = hasWallMesh ? (wallBox.max.x - wallBox.min.x) : (fullCorrBox.max.x - fullCorrBox.min.x);
         const sculptureZ = -(totalCorridorLength * 0.46);
 
+        // Localizar la reja del fondo ya posicionada en el pasillo
+        const rejaBox = new THREE.Box3();
+        let hasReja = false;
+        corridor.traverse((node) => {
+          if (node.isMesh) {
+            const mName = (node.name || '').toLowerCase();
+            const matName = (node.material?.name || '').toLowerCase();
+            if (mName.includes('reja') || matName.includes('reja')) {
+              rejaBox.expandByObject(node);
+              hasReja = true;
+            }
+          }
+        });
+
         // 2. ESCULTURA FELINA
         const sculpture = gltfSculpture.scene;
         sculptureGroup = sculpture;
@@ -839,11 +961,10 @@
         );
         sculpture.updateMatrixWorld(true);
 
-        // Guardar volumen y materiales de la escultura para el snap a 50 cm y brillo progresivo
         sculptureLocalBox.setFromObject(sculpture);
         sculptureLocalBox.getCenter(sculptureCenterLocal);
         const sculpSize = sculptureLocalBox.getSize(new THREE.Vector3());
-        sculptureOrbitRadius = Math.max(0.75, Math.max(sculpSize.x, sculpSize.z) * 0.5 + 0.35);
+        sculptureOrbitRadius = Math.max(0.82, Math.max(sculpSize.x, sculpSize.z) * 0.5 + 0.38);
 
         const seenSculpMats = new Set();
         sculpture.traverse((node) => {
@@ -862,7 +983,6 @@
           }
         });
 
-        // Anclar audio posicional en el centro de la escultura
         if (positionalAudio) {
           const audioAnchor = new THREE.Object3D();
           audioAnchor.position.copy(sculptureCenterLocal);
@@ -876,13 +996,13 @@
         sculptureAwakenLight = new THREE.PointLight(0xfde047, 0.0, 12);
         sculptureAwakenLight.position.set(sculptureCenterLocal.x, sculptureCenterLocal.y + 0.45, sculptureCenterLocal.z + 0.35);
 
-        // 3. GIROSCOPIO DORADO (Fondo, esquina inferior derecha)
+        // 3. GIROSCOPIO DORADO (Ligeramente más grande: 40 cm, detrás de la reja del fondo)
         gyroGroup = new THREE.Group();
         gyroModel = gltfGyro.scene;
         const rawGyroBox = new THREE.Box3().setFromObject(gyroModel);
         const rawGyroSize = rawGyroBox.getSize(new THREE.Vector3());
         const maxDim = Math.max(rawGyroSize.x, rawGyroSize.y, rawGyroSize.z) || 1;
-        const targetGyroSize = 0.28; // 28 cm (escala ergonómica en mano VR)
+        const targetGyroSize = 0.40; // 40 cm (más visible detrás de la reja)
         gyroModel.scale.setScalar(targetGyroSize / maxDim);
         gyroModel.updateMatrixWorld(true);
 
@@ -891,14 +1011,13 @@
         gyroModel.position.sub(centeredGyroCenter);
         gyroGroup.add(gyroModel);
 
-        // Esfera invisible generosa para facilitar el agarre con rayo o toque en pantalla
-        const hitGeo = new THREE.SphereGeometry(0.42, 12, 12);
+        // Esfera invisible amplia para tomarlo cómodamente a través de la reja
+        const hitGeo = new THREE.SphereGeometry(0.55, 12, 12);
         const hitMat = new THREE.MeshBasicMaterial({ visible: false });
         gyroHitSphere = new THREE.Mesh(hitGeo, hitMat);
         gyroGroup.add(gyroHitSphere);
 
-        // Destello dorado sutil para pista diegética en la esquina y modo brújula
-        gyroLight = new THREE.PointLight(0xfacc15, 0.9, 3.8);
+        gyroLight = new THREE.PointLight(0xfacc15, 1.15, 4.5);
         gyroGroup.add(gyroLight);
 
         const seenGyroMats = new Set();
@@ -909,17 +1028,24 @@
               if (!seenGyroMats.has(mat) && 'emissive' in mat) {
                 seenGyroMats.add(mat);
                 mat.emissive.copy(_goldColor);
-                mat.emissiveIntensity = 0.22;
+                mat.emissiveIntensity = 0.28;
                 gyroMaterials.push(mat);
               }
             });
           }
         });
 
-        // Posición exacta: fondo del pasillo, esquina inferior derecha (sin chocar con muro ni hundirse)
-        const rightCornerX = THREE.MathUtils.clamp((corridorWidth * 0.5) - 0.65, 0.95, 1.55);
-        const farCornerZ = -(totalCorridorLength - 1.35);
-        gyroRestPosition.set(rightCornerX, 0.26, farCornerZ);
+        // Posición: detrás de la reja del fondo del pasillo (visible entre los barrotes)
+        if (hasReja) {
+          const rejaCenter = rejaBox.getCenter(new THREE.Vector3());
+          const behindRejaX = THREE.MathUtils.lerp(rejaCenter.x, rejaBox.max.x, 0.38);
+          const behindRejaZ = rejaBox.min.z - 0.55;
+          gyroRestPosition.set(behindRejaX, 0.42, behindRejaZ);
+        } else {
+          const rightCornerX = THREE.MathUtils.clamp((corridorWidth * 0.5) - 0.75, 0.75, 1.35);
+          const behindBackZ = -(totalCorridorLength + 0.55);
+          gyroRestPosition.set(rightCornerX, 0.42, behindBackZ);
+        }
         gyroGroup.position.copy(gyroRestPosition);
 
         interiorGroup.add(corridor, sculpture, sculptureLight, sculptureAwakenLight, gyroGroup);
@@ -964,9 +1090,8 @@
 
     function activateSculptureAwakening() {
       artifactState = ARTIFACT_STATE.ACTIVADO;
-      awakeningT = 0;
+      awakeningElapsed = 0;
 
-      // Ángulo inicial de órbita continuo desde la posición exacta donde llegó el giroscopio
       orbitAngle = Math.atan2(
         gyroGroup.position.z - sculptureCenterLocal.z,
         gyroGroup.position.x - sculptureCenterLocal.x
@@ -991,7 +1116,6 @@
     function updateArtifactAndAwakening(dt, timeSec) {
       if (!gyroGroup || !gyroModel) return;
 
-      // Resaltar rayo del control Quest en dorado al apuntar al giroscopio
       if (renderer.xr.isPresenting && artifactState === ARTIFACT_STATE.EXPLORACION) {
         for (let i = 0; i < controllers.length; i++) {
           const pointing = isControllerPointingAtGyro(controllers[i]);
@@ -1001,40 +1125,37 @@
       }
 
       if (artifactState === ARTIFACT_STATE.EXPLORACION) {
-        // Pista diegética: levitación muy suave, rotación pausada y destello cálido
         gyroGroup.position.set(
           gyroRestPosition.x,
-          gyroRestPosition.y + Math.sin(timeSec * 1.9) * 0.045,
+          gyroRestPosition.y + Math.sin(timeSec * 1.9) * 0.055,
           gyroRestPosition.z
         );
         gyroModel.rotation.y += dt * 0.95;
         gyroModel.rotation.x = Math.sin(timeSec * 1.2) * 0.18;
         const pulse = 0.5 + 0.5 * Math.sin(timeSec * 2.6);
-        gyroLight.intensity = 0.65 + pulse * 0.75;
-        for (const mat of gyroMaterials) mat.emissiveIntensity = 0.2 + pulse * 0.3;
+        gyroLight.intensity = 0.85 + pulse * 0.85;
+        for (const mat of gyroMaterials) mat.emissiveIntensity = 0.25 + pulse * 0.35;
+        updateGyroTrail(dt, null);
         return;
       }
 
       if (artifactState === ARTIFACT_STATE.PORTANDO) {
-        // Calcular posición objetivo en mundo y pasarla al espacio local de interiorGroup
         if (carryingMode === 'xr' && carryingController) {
           carryingController.getWorldPosition(_tempVecA);
           _tempMatrix.identity().extractRotation(carryingController.matrixWorld);
-          _tempVecB.set(0, 0.04, -0.14).applyMatrix4(_tempMatrix);
+          _tempVecB.set(0, 0.05, -0.18).applyMatrix4(_tempMatrix);
           _tempVecA.add(_tempVecB);
         } else {
           const activeCam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
-          _tempVecA.set(0.24, -0.20, -0.58).applyMatrix4(activeCam.matrixWorld);
+          _tempVecA.set(0.28, -0.22, -0.68).applyMatrix4(activeCam.matrixWorld);
         }
 
         interiorGroup.worldToLocal(_tempVecA);
         gyroGroup.position.lerp(_tempVecA, Math.min(1, dt * 11.0));
 
-        // Brújula intuitiva: distancia real en metros al volumen de la escultura
         const distMeters = sculptureLocalBox.distanceToPoint(gyroGroup.position);
         const proximity = THREE.MathUtils.clamp(1.0 - (distMeters - 0.5) / 7.5, 0.0, 1.0);
 
-        // Aceleración de giro y pulso luminoso proporcional a la cercanía
         const spinSpeed = 1.8 + proximity * 10.5;
         gyroModel.rotation.y += dt * spinSpeed;
         gyroModel.rotation.x += dt * (0.6 + proximity * 4.2);
@@ -1046,13 +1167,13 @@
           mat.emissiveIntensity = 0.35 + proximity * 1.35 + compassPulse * 0.35;
         }
 
-        // Micro-pulsos hápticos en Quest al entrar en zona cálida (< 2.0 m)
         if (carryingController && distMeters < 2.0 && (timeSec - lastHapticTime) > (0.45 - proximity * 0.25)) {
           lastHapticTime = timeSec;
           triggerHaptic(carryingController, 0.15 + proximity * 0.35, 40);
         }
 
-        // Anclaje mágico a 50 cm (0.50 m) de la escultura
+        updateGyroTrail(dt, null);
+
         if (distMeters <= 0.50) {
           activateSculptureAwakening();
         }
@@ -1072,29 +1193,44 @@
         gyroModel.rotation.y += dt * 2.4;
         gyroModel.rotation.x += dt * 0.9;
 
-        // Despertar luminoso progresivo de la escultura (rampa suave ~2.2 s + respiración dorada)
-        awakeningT = Math.min(1.0, awakeningT + dt * 0.45);
-        const eased = 1.0 - Math.pow(1.0 - awakeningT, 3);
-        const breath = 0.5 + 0.5 * Math.sin(timeSec * 2.1);
+        // Estela de brillo fino que se desvanece al paso del giroscopio
+        updateGyroTrail(dt, gyroGroup.position);
 
-        gyroLight.intensity = 2.6 + breath * 0.9;
-        for (const mat of gyroMaterials) mat.emissiveIntensity = 1.15 + breath * 0.35;
+        // Brillo temporal de la escultura: sube en 1.5s, sostiene 3s y se apaga suavemente en 2s (total ~6.5s)
+        awakeningElapsed += dt;
+        let glowFactor = 0.0;
+        if (awakeningElapsed < 1.5) {
+          const t = awakeningElapsed / 1.5;
+          glowFactor = 1.0 - Math.pow(1.0 - t, 3);
+        } else if (awakeningElapsed < 4.5) {
+          glowFactor = 1.0;
+        } else if (awakeningElapsed < 6.5) {
+          const t = (awakeningElapsed - 4.5) / 2.0;
+          glowFactor = Math.pow(1.0 - t, 2);
+        } else {
+          glowFactor = 0.0;
+        }
+
+        const breath = 0.5 + 0.5 * Math.sin(timeSec * 2.4);
+        gyroLight.intensity = 2.0 + breath * 0.7;
+        for (const mat of gyroMaterials) mat.emissiveIntensity = 0.95 + breath * 0.3;
 
         if (sculptureAwakenLight) {
-          sculptureAwakenLight.intensity = eased * (5.2 + breath * 1.4);
+          sculptureAwakenLight.intensity = glowFactor * (5.2 + breath * 1.2);
         }
         if (sculptureLight) {
-          sculptureLight.intensity = 2.4 + eased * 1.8;
+          sculptureLight.intensity = 2.4 + glowFactor * 1.8;
         }
 
         for (const state of sculptureMaterialStates) {
-          state.mat.emissive.copy(state.baseEmissive).lerp(_goldColor, eased * 0.85);
-          state.mat.emissiveIntensity = state.baseIntensity + eased * (0.55 + breath * 0.18);
+          state.mat.emissive.copy(state.baseEmissive).lerp(_goldColor, glowFactor * 0.85);
+          state.mat.emissiveIntensity = state.baseIntensity + glowFactor * (0.55 + breath * 0.16);
         }
 
-        if (awakenParticleMat) {
+        if (awakenParticleMat && awakenParticles) {
           awakenParticleMat.uniforms.uTime.value = timeSec;
-          awakenParticleMat.uniforms.uIntensity.value = eased * 0.95;
+          awakenParticleMat.uniforms.uIntensity.value = glowFactor * 0.95;
+          awakenParticles.visible = glowFactor > 0.005;
         }
       }
     }
@@ -1317,7 +1453,7 @@
           fireflies.visible = true;
 
           if (artifactState === ARTIFACT_STATE.EXPLORACION) {
-            statusText.textContent = 'Pasillo materializado · Busca el objeto dorado al fondo derecha';
+            statusText.textContent = 'Pasillo materializado · Busca el objeto dorado detrás de la reja';
           }
         }
       } else if (leafParticles && leafParticles.visible) {
