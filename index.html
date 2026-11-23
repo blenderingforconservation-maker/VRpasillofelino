@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <title>Pasillo Surrealista · VR/AR</title>
 
   <!-- Tailwind CSS -->
@@ -25,18 +28,59 @@
 
   <style>
     * { box-sizing: border-box; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
-    html, body { margin: 0; padding: 0; width: 100%; height: 100dvh; overflow: hidden; background-color: #050a08; font-family: 'Inter', sans-serif; touch-action: none; }
+    html, body {
+      margin: 0; padding: 0; width: 100%; height: 100dvh; min-height: -webkit-fill-available;
+      overflow: hidden; background-color: #050a08; font-family: 'Inter', sans-serif; touch-action: none;
+    }
     .font-museum { font-family: 'Cormorant Garamond', Georgia, serif; }
     #webgl-viewport { position: fixed; inset: 0; z-index: 2; cursor: grab; }
     #webgl-viewport:active { cursor: grabbing; }
-    #hud-overlay { position: fixed; inset: 0; z-index: 10; pointer-events: none; display: none; flex-direction: column; justify-content: space-between; padding: env(safe-area-inset-top, 14px) env(safe-area-inset-right, 16px) env(safe-area-inset-bottom, 18px) env(safe-area-inset-left, 16px); }
+    #hud-overlay {
+      position: fixed; inset: 0; z-index: 10; pointer-events: none; display: none;
+      flex-direction: column; justify-content: space-between;
+      padding: max(env(safe-area-inset-top, 14px), 12px) max(env(safe-area-inset-right, 16px), 14px) max(env(safe-area-inset-bottom, 18px), 14px) max(env(safe-area-inset-left, 16px), 14px);
+    }
     #hud-overlay.active { display: flex; }
     .interactive { pointer-events: auto; }
-    .magic-btn { background: radial-gradient(circle at 50% 0%, rgba(163, 230, 53, 0.28), rgba(6, 28, 20, 0.90) 75%); border: 1px solid rgba(190, 242, 100, 0.45); box-shadow: 0 0 20px rgba(132, 204, 22, 0.25), inset 0 1px 1px rgba(254, 240, 138, 0.35); transition: transform 0.12s ease, border-color 0.2s ease, box-shadow 0.2s ease; }
-    .magic-btn:active, .magic-btn.pressing { transform: scale(0.94); border-color: rgba(253, 224, 71, 0.95); box-shadow: 0 0 28px rgba(250, 204, 21, 0.55), inset 0 0 12px rgba(163, 230, 53, 0.45); }
-    .magic-cta { background: linear-gradient(135deg, #22c55e 0%, #a3e635 50%, #facc15 100%); box-shadow: 0 0 30px rgba(163, 230, 53, 0.55), 0 0 60px rgba(250, 204, 21, 0.25); transition: transform 0.15s ease, box-shadow 0.2s ease; }
+    .magic-btn {
+      background: radial-gradient(circle at 50% 0%, rgba(163, 230, 53, 0.28), rgba(6, 28, 20, 0.90) 75%);
+      border: 1px solid rgba(190, 242, 100, 0.45);
+      box-shadow: 0 0 20px rgba(132, 204, 22, 0.25), inset 0 1px 1px rgba(254, 240, 138, 0.35);
+      transition: transform 0.12s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .magic-btn:active, .magic-btn.pressing {
+      transform: scale(0.94); border-color: rgba(253, 224, 71, 0.95);
+      box-shadow: 0 0 28px rgba(250, 204, 21, 0.55), inset 0 0 12px rgba(163, 230, 53, 0.45);
+    }
+    .magic-cta {
+      background: linear-gradient(135deg, #22c55e 0%, #a3e635 50%, #facc15 100%);
+      box-shadow: 0 0 30px rgba(163, 230, 53, 0.55), 0 0 60px rgba(250, 204, 21, 0.25);
+      transition: transform 0.15s ease, box-shadow 0.2s ease;
+    }
     .magic-cta:active { transform: scale(0.95); }
-    #toast-banner { position: fixed; top: 72px; left: 50%; transform: translateX(-50%); padding: 8px 20px; background: rgba(5, 14, 10, 0.92); border: 1px solid rgba(163, 230, 53, 0.45); border-radius: 999px; color: #ecfccb; font-size: 12px; font-weight: 500; letter-spacing: 0.03em; opacity: 0; transition: opacity 0.25s ease; pointer-events: none; text-align: center; max-width: 90vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; z-index: 30; }
+    #toast-banner {
+      position: fixed; top: 72px; left: 50%; transform: translateX(-50%);
+      padding: 8px 20px; background: rgba(5, 14, 10, 0.92); border: 1px solid rgba(163, 230, 53, 0.45);
+      border-radius: 999px; color: #ecfccb; font-size: 12px; font-weight: 500; letter-spacing: 0.03em;
+      opacity: 0; transition: opacity 0.25s ease; pointer-events: none; text-align: center;
+      max-width: 90vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; z-index: 30;
+    }
+
+    /* Modo Pantalla Completa inmersivo (también habilita vista limpia total en iPhone / iOS Safari) */
+    body.immersive-fullscreen #status-pill,
+    body.immersive-fullscreen #xr-launch-bar,
+    body.immersive-fullscreen #btn-replay-magic {
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(-6px);
+    }
+    #status-pill, #xr-launch-bar, #btn-replay-magic {
+      transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+    body.immersive-fullscreen #btn-fullscreen {
+      border-color: rgba(253, 224, 71, 0.85);
+      box-shadow: 0 0 18px rgba(250, 204, 21, 0.35);
+    }
   </style>
 </head>
 <body>
@@ -71,17 +115,26 @@
   <!-- INTERFAZ DE CONTROL Y LANZAMIENTO VR / AR -->
   <div id="hud-overlay">
     <header class="w-full flex flex-wrap items-center justify-between gap-2">
-      <div class="flex items-center gap-2.5 bg-stone-950/85 border border-lime-400/35 rounded-full px-4 py-2 shadow-lg">
+      <div id="status-pill" class="flex items-center gap-2.5 bg-stone-950/85 border border-lime-400/35 rounded-full px-4 py-2 shadow-lg">
         <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-lime-400 animate-pulse"></span>
         <span id="status-text" class="text-[11px] font-medium text-stone-100">Sala activa · Da un paso para iniciar el recorrido</span>
       </div>
-      <div class="interactive flex items-center gap-2">
+      <div class="interactive flex items-center gap-2 ml-auto">
         <button id="btn-replay-magic" class="px-3.5 py-2 rounded-full bg-stone-950/85 border border-yellow-300/40 text-yellow-200 text-[11px] font-medium active:scale-95 transition-transform">✨ Materializar Hojas</button>
+        <button id="btn-fullscreen" type="button" aria-label="Pantalla completa" title="Pantalla completa" class="px-3.5 py-2 rounded-full bg-stone-950/85 border border-lime-400/40 text-lime-100 text-[11px] font-medium flex items-center gap-1.5 active:scale-95 transition-transform backdrop-blur-sm">
+          <svg id="icon-fs-enter" class="w-3.5 h-3.5 text-yellow-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4"/>
+          </svg>
+          <svg id="icon-fs-exit" class="w-3.5 h-3.5 text-yellow-300 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>
+          </svg>
+          <span id="label-fullscreen" class="hidden sm:inline">Pantalla Completa</span>
+        </button>
       </div>
     </header>
 
     <footer class="w-full flex flex-col items-center gap-3">
-      <div class="interactive flex flex-wrap items-center justify-center gap-2.5 w-full max-w-md">
+      <div id="xr-launch-bar" class="interactive flex flex-wrap items-center justify-center gap-2.5 w-full max-w-md">
         <button id="btn-enter-vr" class="magic-cta flex-1 min-w-[165px] py-3.5 px-5 rounded-full text-stone-950 font-extrabold text-xs uppercase tracking-wider flex items-center justify-center gap-2">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
           <span>Entrar en VR (Quest 3)</span>
@@ -122,7 +175,7 @@
       awaken: `${REPO_RAW_BASE}audio/03_escultura_despierta.mp3`
     };
 
-    // Respaldo con citas verificadas de Leonora Carrington si aún no se suben los MP3
+    // Respaldo con citas verificadas de Leonora Carrington mientras subes los MP3
     const FALLBACK_TEXTS = {
       step: 'El arte es una magia que hace que las horas se desvanezcan e incluso los días se disuelvan en segundos.',
       pickup: 'Uno debe tener mucho cuidado con lo que se lleva cuando se marcha para siempre; algo aparentemente inútil puede volverse esencial bajo circunstancias específicas.',
@@ -144,7 +197,7 @@
     let sculptureGroup = null;
     let sculptureLocalBox = new THREE.Box3();
     let sculptureCenterLocal = new THREE.Vector3();
-    let sculptureOrbitRadius = 0.82;
+    let sculptureOrbitRadius = 0.78;
     let sculptureLight = null;
     let sculptureAwakenLight = null;
     const sculptureMaterialStates = [];
@@ -156,6 +209,16 @@
     let gyroHaloSprite = null;
     let gyroRestPosition = new THREE.Vector3();
     const gyroMaterials = [];
+
+    // Resplandor llamativo detrás de la parte baja de los barrotes de la reja
+    let gateBeaconGroup = null;
+    let gateBeaconLight = null;
+    let gateGlowSpriteWide = null;
+    let gateGlowSpriteCore = null;
+    let gateFloorGlowMesh = null;
+    let gateSparks = null;
+    let gateSparksMat = null;
+    let gateBeaconFade = 1.0;
 
     let awakenParticles = null;
     let awakenParticleMat = null;
@@ -192,6 +255,9 @@
     let stepOriginReady = false;
     const stepOriginWalk = new THREE.Vector3();
     const stepOriginCam = new THREE.Vector3();
+
+    // Estado de pantalla completa (PC, Android y fallback inmersivo iPhone/iOS)
+    let isPseudoFullscreen = false;
 
     const controllers = [];
     const controllerLines = [];
@@ -248,6 +314,10 @@
     const btnEnterAR = document.getElementById('btn-enter-ar');
     const btnEnterARIos = document.getElementById('btn-enter-ar-ios');
     const btnReplayMagic = document.getElementById('btn-replay-magic');
+    const btnFullscreen = document.getElementById('btn-fullscreen');
+    const iconFsEnter = document.getElementById('icon-fs-enter');
+    const iconFsExit = document.getElementById('icon-fs-exit');
+    const labelFullscreen = document.getElementById('label-fullscreen');
     const statusText = document.getElementById('status-text');
     const statusDot = document.getElementById('status-dot');
     const btnStepForward = document.getElementById('btn-step-forward');
@@ -261,6 +331,89 @@
       toastBanner.style.opacity = '1';
       clearTimeout(showToast._t);
       showToast._t = setTimeout(() => { toastBanner.style.opacity = '0'; }, duration);
+    }
+
+    // --- PANTALLA COMPLETA MULTIPLATAFORMA (PC, ANDROID E IPHONE/IOS) ---
+    function getNativeFullscreenElement() {
+      return document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement || null;
+    }
+
+    function supportsNativeFullscreen() {
+      const el = document.documentElement;
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      if (isIOS) return false;
+      return Boolean(
+        (document.fullscreenEnabled || document.webkitFullscreenEnabled || document.msFullscreenEnabled) &&
+        (el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen)
+      );
+    }
+
+    function syncViewportSize() {
+      if (!renderer || renderer.xr.isPresenting) return;
+      const w = window.visualViewport ? Math.round(window.visualViewport.width) : window.innerWidth;
+      const h = window.visualViewport ? Math.round(window.visualViewport.height) : window.innerHeight;
+      camera.aspect = w / Math.max(1, h);
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    }
+
+    function updateFullscreenUI() {
+      const active = Boolean(getNativeFullscreenElement()) || isPseudoFullscreen;
+      document.body.classList.toggle('immersive-fullscreen', active);
+      iconFsEnter.classList.toggle('hidden', active);
+      iconFsExit.classList.toggle('hidden', !active);
+      labelFullscreen.textContent = active ? 'Salir' : 'Pantalla Completa';
+      btnFullscreen.title = active ? 'Salir de pantalla completa' : 'Pantalla completa';
+      btnFullscreen.setAttribute('aria-label', active ? 'Salir de pantalla completa' : 'Pantalla completa');
+      syncViewportSize();
+    }
+
+    async function toggleFullscreen() {
+      unlockAudio();
+      const nativeEl = getNativeFullscreenElement();
+
+      // Salir de pantalla completa nativa o modo inmersivo iOS
+      if (nativeEl) {
+        try {
+          if (document.exitFullscreen) await document.exitFullscreen();
+          else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+          else if (document.msExitFullscreen) document.msExitFullscreen();
+        } catch (_) {}
+        isPseudoFullscreen = false;
+        updateFullscreenUI();
+        return;
+      }
+
+      if (isPseudoFullscreen) {
+        isPseudoFullscreen = false;
+        updateFullscreenUI();
+        return;
+      }
+
+      // Intentar Fullscreen nativo en PC y Android
+      if (supportsNativeFullscreen()) {
+        const target = document.documentElement;
+        try {
+          if (target.requestFullscreen) {
+            await target.requestFullscreen({ navigationUI: 'hide' }).catch(() => target.requestFullscreen());
+          } else if (target.webkitRequestFullscreen) {
+            target.webkitRequestFullscreen();
+          } else if (target.msRequestFullscreen) {
+            target.msRequestFullscreen();
+          }
+          setTimeout(updateFullscreenUI, 80);
+          return;
+        } catch (err) {
+          console.warn('Fallback a modo pantalla completa inmersivo:', err);
+        }
+      }
+
+      // Fallback completo y fluido para iPhone (iOS Safari) y navegadores embebidos
+      isPseudoFullscreen = true;
+      updateFullscreenUI();
+      window.scrollTo(0, 1);
+      setTimeout(() => { window.scrollTo(0, 1); syncViewportSize(); }, 180);
+      showToast('Vista inmersiva activa · Toca el botón superior para salir');
     }
 
     // --- SISTEMA DE 3 AUDIOS CON CROSSFADE ANTI-EMPALME ---
@@ -281,11 +434,9 @@
       audioListener = new THREE.AudioListener();
       camera.add(audioListener);
 
-      // Pistas 1 y 2: estéreo envolvente (narrador interior)
       narrationTracks.step.audio = new THREE.Audio(audioListener);
       narrationTracks.pickup.audio = new THREE.Audio(audioListener);
 
-      // Pista 3: Audio Posicional 3D que se anclará a la escultura felina
       const posAudio = new THREE.PositionalAudio(audioListener);
       posAudio.setRefDistance(2.4);
       posAudio.setMaxDistance(18.0);
@@ -303,7 +454,6 @@
           },
           undefined,
           () => {
-            // Si aún no está subido el MP3 al repo, usará el respaldo de voz verificada
             narrationTracks[key].loaded = false;
           }
         );
@@ -362,7 +512,6 @@
           return;
         }
 
-        // Respaldo automático con Web Speech API mientras subes los .mp3
         if ('speechSynthesis' in window && FALLBACK_TEXTS[key]) {
           try {
             window.speechSynthesis.cancel();
@@ -482,13 +631,14 @@
       setupUIAndDesktopControls();
       detectARSupport();
 
-      window.addEventListener('resize', () => {
-        if (!renderer.xr.isPresenting) {
-          camera.aspect = window.innerWidth / window.innerHeight;
-          camera.updateProjectionMatrix();
-          renderer.setSize(window.innerWidth, window.innerHeight);
-        }
-      });
+      window.addEventListener('resize', syncViewportSize);
+      window.addEventListener('orientationchange', () => setTimeout(syncViewportSize, 200));
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', syncViewportSize);
+      }
+      document.addEventListener('fullscreenchange', updateFullscreenUI);
+      document.addEventListener('webkitfullscreenchange', updateFullscreenUI);
+      document.addEventListener('msfullscreenchange', updateFullscreenUI);
 
       lastFrameTime = performance.now();
       renderer.setAnimationLoop(renderLoop);
@@ -553,7 +703,7 @@
       artifactState = ARTIFACT_STATE.PORTANDO;
       carryingMode = mode;
       carryingController = controller;
-      hasTriggeredFirstStep = true; // Ya avanzó en la secuencia narrativa
+      hasTriggeredFirstStep = true;
 
       playPickupChime();
       playNarrativeTrack('pickup');
@@ -612,21 +762,182 @@
       const tex = new THREE.CanvasTexture(canvas); tex.needsUpdate = true; return tex;
     }
 
-    // Textura radial aditiva para el halo atmosférico del giroscopio (efecto bloom sin costo GPU)
     function createGoldenHaloTexture() {
       const canvas = document.createElement('canvas');
       canvas.width = 256; canvas.height = 256;
       const ctx = canvas.getContext('2d');
       const grad = ctx.createRadialGradient(128, 128, 6, 128, 128, 126);
-      grad.addColorStop(0.0, 'rgba(255, 253, 232, 0.95)');
-      grad.addColorStop(0.22, 'rgba(254, 240, 138, 0.65)');
-      grad.addColorStop(0.52, 'rgba(250, 204, 21, 0.22)');
+      grad.addColorStop(0.0, 'rgba(255, 253, 232, 0.98)');
+      grad.addColorStop(0.22, 'rgba(254, 240, 138, 0.72)');
+      grad.addColorStop(0.52, 'rgba(250, 204, 21, 0.28)');
       grad.addColorStop(1.0, 'rgba(245, 158, 11, 0.0)');
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, 256, 256);
       const tex = new THREE.CanvasTexture(canvas);
       tex.needsUpdate = true;
       return tex;
+    }
+
+    // Resplandor llamativo detrás de los barrotes en la parte inferior del fondo del pasillo
+    function setupGateLowerBeacon(anchorPos, haloTex) {
+      gateBeaconGroup = new THREE.Group();
+      gateBeaconGroup.position.set(anchorPos.x, 0, anchorPos.z);
+
+      // 1. Luz real cálida-dorada que se filtra entre los barrotes e ilumina el suelo del pasillo
+      gateBeaconLight = new THREE.PointLight(0xfacc15, 4.8, 12.5, 1.45);
+      gateBeaconLight.position.set(0, 0.52, 0.15);
+      gateBeaconGroup.add(gateBeaconLight);
+
+      // 2. Resplandor atmosférico ancho detrás de la parte baja de los barrotes (muy visible desde el pasillo)
+      const wideMat = new THREE.SpriteMaterial({
+        map: haloTex,
+        color: 0xfde047,
+        transparent: true,
+        opacity: 0.72,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      gateGlowSpriteWide = new THREE.Sprite(wideMat);
+      gateGlowSpriteWide.position.set(0, 0.56, -0.08);
+      gateGlowSpriteWide.scale.set(3.2, 1.55, 1);
+      gateGlowSpriteWide.renderOrder = 3;
+      gateBeaconGroup.add(gateGlowSpriteWide);
+
+      // 3. Núcleo dorado intenso justo a nivel bajo detrás de la reja
+      const coreMat = new THREE.SpriteMaterial({
+        map: haloTex,
+        color: 0xfffbeb,
+        transparent: true,
+        opacity: 0.88,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      gateGlowSpriteCore = new THREE.Sprite(coreMat);
+      gateGlowSpriteCore.position.set(0, 0.42, 0.02);
+      gateGlowSpriteCore.scale.set(1.65, 1.05, 1);
+      gateGlowSpriteCore.renderOrder = 4;
+      gateBeaconGroup.add(gateGlowSpriteCore);
+
+      // 4. Charco de luz dorada proyectado sobre el suelo atravesando los barrotes hacia el pasillo
+      const floorGeo = new THREE.PlaneGeometry(3.4, 3.2).rotateX(-Math.PI / 2);
+      const floorMat = new THREE.MeshBasicMaterial({
+        map: haloTex,
+        color: 0xfbbf24,
+        transparent: true,
+        opacity: 0.58,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      gateFloorGlowMesh = new THREE.Mesh(floorGeo, floorMat);
+      gateFloorGlowMesh.position.set(0, 0.035, 0.55);
+      gateFloorGlowMesh.renderOrder = 2;
+      gateBeaconGroup.add(gateFloorGlowMesh);
+
+      // 5. Partículas finas ascendentes detrás de los barrotes inferiores (1 draw call)
+      const sparkCount = 90;
+      const geo = new THREE.BufferGeometry();
+      const pos = new Float32Array(sparkCount * 3);
+      const seeds = new Float32Array(sparkCount * 3);
+      for (let i = 0; i < sparkCount; i++) {
+        pos[i * 3] = (Math.random() - 0.5) * 2.1;
+        pos[i * 3 + 1] = 0.05 + Math.random() * 1.45;
+        pos[i * 3 + 2] = (Math.random() - 0.5) * 0.75;
+        seeds[i * 3] = Math.random() * Math.PI * 2;
+        seeds[i * 3 + 1] = 0.25 + Math.random() * 0.55;
+        seeds[i * 3 + 2] = 10.0 + Math.random() * 14.0;
+      }
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      geo.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 3));
+
+      gateSparksMat = new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false,
+        uniforms: {
+          uTime: { value: 0 },
+          uOpacity: { value: 1.0 },
+          uPixelRatio: { value: renderer.getPixelRatio() }
+        },
+        vertexShader: `
+          attribute vec3 aSeed;
+          uniform float uTime;
+          uniform float uOpacity;
+          uniform float uPixelRatio;
+          varying float vAlpha;
+          void main() {
+            vec3 p = position;
+            float phase = aSeed.x;
+            float speed = aSeed.y;
+            p.y = mod(p.y + uTime * speed * 0.45, 1.55);
+            p.x += sin(uTime * 1.4 + phase) * 0.14;
+            p.z += cos(uTime * 1.2 + phase) * 0.10;
+            float hFade = smoothstep(0.0, 0.22, p.y) * (1.0 - smoothstep(1.05, 1.55, p.y));
+            float twinkle = 0.55 + 0.45 * sin(uTime * 6.5 + phase * 3.0);
+            vAlpha = hFade * twinkle * uOpacity;
+            vec4 mvPos = modelViewMatrix * vec4(p, 1.0);
+            gl_Position = projectionMatrix * mvPos;
+            gl_PointSize = clamp((aSeed.z * uPixelRatio) / max(-mvPos.z, 0.6), 1.5, 22.0);
+          }
+        `,
+        fragmentShader: `
+          varying float vAlpha;
+          void main() {
+            if (vAlpha < 0.01) discard;
+            vec2 p = (gl_PointCoord - vec2(0.5)) * 2.0;
+            float d = length(p);
+            float core = exp(-d * d * 7.0);
+            float star = max(0.0, 1.0 - abs(p.x * p.y) * 16.0) * exp(-d * d * 2.8);
+            float a = (core * 0.9 + star * 0.5) * vAlpha;
+            if (a < 0.01) discard;
+            vec3 col = mix(vec3(1.0, 0.74, 0.16), vec3(1.0, 0.99, 0.85), core);
+            gl_FragColor = vec4(col * 1.7, a);
+          }
+        `
+      });
+
+      gateSparks = new THREE.Points(geo, gateSparksMat);
+      gateSparks.frustumCulled = false;
+      gateSparks.renderOrder = 4;
+      gateBeaconGroup.add(gateSparks);
+
+      interiorGroup.add(gateBeaconGroup);
+    }
+
+    function updateGateLowerBeacon(dt, timeSec) {
+      if (!gateBeaconGroup) return;
+
+      const targetFade = (artifactState === ARTIFACT_STATE.EXPLORACION && !isMaterializing) ? 1.0 : 0.0;
+      const speed = targetFade > gateBeaconFade ? 1.6 : 1.4;
+      gateBeaconFade = THREE.MathUtils.lerp(gateBeaconFade, targetFade, Math.min(1, dt * speed));
+
+      if (gateBeaconFade < 0.005) {
+        gateBeaconGroup.visible = false;
+        return;
+      }
+
+      gateBeaconGroup.visible = true;
+      const wave = 0.5 + 0.5 * Math.sin(timeSec * 2.35);
+      const shimmer = 0.5 + 0.5 * Math.sin(timeSec * 4.8 + 1.2);
+
+      if (gateBeaconLight) {
+        gateBeaconLight.intensity = (4.2 + wave * 2.2 + shimmer * 0.5) * gateBeaconFade;
+      }
+      if (gateGlowSpriteWide) {
+        gateGlowSpriteWide.material.opacity = (0.58 + wave * 0.24) * gateBeaconFade;
+        gateGlowSpriteWide.scale.set(3.0 + wave * 0.45, 1.45 + wave * 0.25, 1);
+      }
+      if (gateGlowSpriteCore) {
+        gateGlowSpriteCore.material.opacity = (0.76 + shimmer * 0.22) * gateBeaconFade;
+        gateGlowSpriteCore.scale.set(1.55 + shimmer * 0.25, 0.95 + wave * 0.2, 1);
+      }
+      if (gateFloorGlowMesh) {
+        gateFloorGlowMesh.material.opacity = (0.46 + wave * 0.22) * gateBeaconFade;
+      }
+      if (gateSparksMat) {
+        gateSparksMat.uniforms.uTime.value = timeSec;
+        gateSparksMat.uniforms.uOpacity.value = 0.95 * gateBeaconFade;
+      }
     }
 
     function setupMagicalLeafMaterialization() {
@@ -868,7 +1179,6 @@
       for (let i = 0; i < TRAIL_COUNT; i++) {
         if (trailLives[i] > 0) {
           trailLives[i] = Math.max(0, trailLives[i] - dt / trailMaxLives[i]);
-          // Deriva delicada hacia arriba y ligero remolino al desvanecerse
           trailPositions[i * 3] += Math.cos(timeSec * 2.4 + trailPhases[i]) * dt * 0.035;
           trailPositions[i * 3 + 1] += dt * 0.11;
           trailPositions[i * 3 + 2] += Math.sin(timeSec * 2.4 + trailPhases[i]) * dt * 0.035;
@@ -878,7 +1188,7 @@
 
       if (emitPos) {
         trailSpawnAccum += dt;
-        const spawnInterval = 0.010; // Alta densidad (~100 chispas finas/seg)
+        const spawnInterval = 0.010;
         while (trailSpawnAccum >= spawnInterval) {
           trailSpawnAccum -= spawnInterval;
           const idx = trailCursor;
@@ -1144,7 +1454,7 @@
           }
         });
 
-        // 2. ESCULTURA FELINA (Más atrás: 62%, pegada al muro izquierdo, ligeramente menos alta: escala 2.6)
+        // 2. ESCULTURA FELINA (Más pegada a la pared izquierda y ligeramente más atrás: 68%)
         const sculpture = gltfSculpture.scene;
         sculptureGroup = sculpture;
         sculpture.scale.setScalar(2.6);
@@ -1154,20 +1464,20 @@
         const sculpCenter = sculpBox.getCenter(new THREE.Vector3());
         const sculpRawSize = sculpBox.getSize(new THREE.Vector3());
 
-        // Calcular borde interior de la pared izquierda para pegarla con margen limpio (12 cm)
-        let innerLeftWallX = -1.78;
+        // Borde izquierdo interior ajustado para acercarla más al muro izquierdo sin atravesarlo
+        let innerLeftWallX = -2.02;
         if (hasPisoSlab) {
           const pisoW = pisoSlabBox.max.x - pisoSlabBox.min.x;
           if (pisoW >= 2.2 && pisoW <= 6.5) {
-            innerLeftWallX = pisoSlabBox.min.x + corridor.position.x;
+            innerLeftWallX = (pisoSlabBox.min.x + corridor.position.x) - 0.14;
           }
         }
         const lateralOffset = THREE.MathUtils.clamp(
-          innerLeftWallX + (sculpRawSize.x * 0.5) + 0.12,
-          -2.05,
-          -1.42
+          innerLeftWallX + (sculpRawSize.x * 0.44),
+          -2.28,
+          -1.66
         );
-        const sculptureZ = -(totalCorridorLength * 0.62);
+        const sculptureZ = -(totalCorridorLength * 0.68);
 
         let lowestVisibleY = Infinity;
         sculpture.traverse((child) => {
@@ -1194,7 +1504,7 @@
         sculptureLocalBox.setFromObject(sculpture);
         sculptureLocalBox.getCenter(sculptureCenterLocal);
         const sculpSize = sculptureLocalBox.getSize(new THREE.Vector3());
-        sculptureOrbitRadius = Math.max(0.72, Math.max(sculpSize.x, sculpSize.z) * 0.5 + 0.34);
+        sculptureOrbitRadius = Math.max(0.70, Math.max(sculpSize.x, sculpSize.z) * 0.48 + 0.30);
 
         const seenSculpMats = new Set();
         sculpture.traverse((node) => {
@@ -1222,12 +1532,13 @@
         }
 
         sculptureLight = new THREE.PointLight(0xfef08a, 2.4, 14);
-        sculptureLight.position.set(lateralOffset + 0.45, 2.2, sculptureZ + 1.35);
+        sculptureLight.position.set(lateralOffset + 0.55, 2.2, sculptureZ + 1.35);
 
         sculptureAwakenLight = new THREE.PointLight(0xfde047, 0.0, 12);
-        sculptureAwakenLight.position.set(sculptureCenterLocal.x + 0.25, sculptureCenterLocal.y + 0.4, sculptureCenterLocal.z + 0.35);
+        sculptureAwakenLight.position.set(sculptureCenterLocal.x + 0.32, sculptureCenterLocal.y + 0.4, sculptureCenterLocal.z + 0.35);
 
         // 3. GIROSCOPIO DORADO (40 cm, detrás de la reja del fondo + halo luminoso)
+        const sharedHaloTexture = createGoldenHaloTexture();
         gyroGroup = new THREE.Group();
         gyroModel = gltfGyro.scene;
         const rawGyroBox = new THREE.Box3().setFromObject(gyroModel);
@@ -1242,9 +1553,8 @@
         gyroModel.position.sub(centeredGyroCenter);
         gyroGroup.add(gyroModel);
 
-        // Halo dorado aditivo sin costo de post-procesado
         const haloMat = new THREE.SpriteMaterial({
-          map: createGoldenHaloTexture(),
+          map: sharedHaloTexture,
           color: 0xfef08a,
           transparent: true,
           opacity: 0.42,
@@ -1256,7 +1566,6 @@
         gyroHaloSprite.renderOrder = 4;
         gyroGroup.add(gyroHaloSprite);
 
-        // Esfera invisible amplia para tomarlo cómodamente a través de la reja
         const hitGeo = new THREE.SphereGeometry(0.55, 12, 12);
         const hitMat = new THREE.MeshBasicMaterial({ visible: false });
         gyroHitSphere = new THREE.Mesh(hitGeo, hitMat);
@@ -1280,20 +1589,24 @@
           }
         });
 
-        // Posición detrás de la reja del fondo
+        // Posición detrás de la reja del fondo y ubicación del resplandor inferior tras los barrotes
+        const beaconAnchor = new THREE.Vector3();
         if (hasReja) {
           const rejaCenter = rejaBox.getCenter(new THREE.Vector3());
           const behindRejaX = THREE.MathUtils.lerp(rejaCenter.x, rejaBox.max.x, 0.38);
           const behindRejaZ = rejaBox.min.z - 0.55;
           gyroRestPosition.set(behindRejaX, 0.42, behindRejaZ);
+          beaconAnchor.set(THREE.MathUtils.lerp(rejaCenter.x, behindRejaX, 0.55), 0, rejaBox.min.z - 0.35);
         } else {
           const rightCornerX = THREE.MathUtils.clamp((corridorWidth * 0.5) - 0.75, 0.75, 1.35);
           const behindBackZ = -(totalCorridorLength + 0.55);
           gyroRestPosition.set(rightCornerX, 0.42, behindBackZ);
+          beaconAnchor.set(rightCornerX * 0.55, 0, -(totalCorridorLength + 0.35));
         }
         gyroGroup.position.copy(gyroRestPosition);
 
         interiorGroup.add(corridor, sculpture, sculptureLight, sculptureAwakenLight, gyroGroup);
+        setupGateLowerBeacon(beaconAnchor, sharedHaloTexture);
         setupAwakeningParticles(sculptureCenterLocal, sculptureOrbitRadius, sculpSize.y);
 
         const combinedBox = new THREE.Box3().setFromObject(interiorGroup);
@@ -1305,7 +1618,7 @@
         const processedMaterials = new Set();
         interiorGroup.traverse((node) => {
           node.frustumCulled = false;
-          if (node.isMesh && node.material && node !== gyroHitSphere) {
+          if (node.isMesh && node.material && node !== gyroHitSphere && node !== gateFloorGlowMesh) {
             const mats = Array.isArray(node.material) ? node.material : [node.material];
             mats.forEach((mat) => {
               if (!processedMaterials.has(mat)) {
@@ -1349,7 +1662,7 @@
       if (walkDist >= 0.45 || physicalDist >= 0.45) {
         hasTriggeredFirstStep = true;
         playNarrativeTrack('step');
-        statusText.textContent = 'Recorrido iniciado · Busca el objeto mágico detrás de la reja';
+        statusText.textContent = 'Recorrido iniciado · Sigue el resplandor detrás de la reja';
         showToast('✨ El arte es una magia que disuelve las horas...');
       }
     }
@@ -1383,6 +1696,8 @@
     function updateArtifactAndAwakening(dt, timeSec) {
       if (!gyroGroup || !gyroModel) return;
 
+      updateGateLowerBeacon(dt, timeSec);
+
       if (renderer.xr.isPresenting && artifactState === ARTIFACT_STATE.EXPLORACION) {
         for (let i = 0; i < controllers.length; i++) {
           const pointing = isControllerPointingAtGyro(controllers[i]);
@@ -1400,15 +1715,15 @@
         gyroModel.rotation.y += dt * 0.95;
         gyroModel.rotation.x = Math.sin(timeSec * 1.2) * 0.18;
         const pulse = 0.5 + 0.5 * Math.sin(timeSec * 2.6);
-        gyroLight.intensity = 0.95 + pulse * 0.95;
-        gyroLight.distance = 5.2;
+        gyroLight.intensity = 1.1 + pulse * 1.05;
+        gyroLight.distance = 5.6;
         if (gyroHaloSprite) {
-          gyroHaloSprite.material.opacity = 0.34 + pulse * 0.22;
-          gyroHaloSprite.scale.setScalar(0.72 + pulse * 0.14);
+          gyroHaloSprite.material.opacity = 0.40 + pulse * 0.26;
+          gyroHaloSprite.scale.setScalar(0.76 + pulse * 0.16);
         }
         for (const mat of gyroMaterials) {
           mat.emissive.copy(_goldColor);
-          mat.emissiveIntensity = 0.28 + pulse * 0.35;
+          mat.emissiveIntensity = 0.34 + pulse * 0.38;
         }
         updateGyroTrail(dt, timeSec, null);
         updateSnapBurst(dt);
@@ -1464,9 +1779,10 @@
       }
 
       if (artifactState === ARTIFACT_STATE.ACTIVADO) {
-        // Órbita suave alrededor de la escultura
+        // Órbita suave desplazada ligeramente hacia el pasillo (+X) para no sumergirse en la pared izquierda
         orbitAngle += dt * 0.54;
-        const targetX = sculptureCenterLocal.x + Math.cos(orbitAngle) * sculptureOrbitRadius;
+        const orbitCenterX = sculptureCenterLocal.x + 0.16;
+        const targetX = orbitCenterX + Math.cos(orbitAngle) * sculptureOrbitRadius;
         const targetZ = sculptureCenterLocal.z + Math.sin(orbitAngle) * sculptureOrbitRadius;
         const targetY = sculptureCenterLocal.y + 0.18 + Math.sin(timeSec * 1.4) * 0.15;
 
@@ -1476,11 +1792,9 @@
         gyroModel.rotation.y += dt * 2.6;
         gyroModel.rotation.x += dt * 1.05;
 
-        // Estela densa de brillo fino + estallido inicial
         updateGyroTrail(dt, timeSec, gyroGroup.position);
         updateSnapBurst(dt);
 
-        // Brillo incandescente del giroscopio en levitación (ilumina escultura y pared al pasar)
         const breath = 0.5 + 0.5 * Math.sin(timeSec * 2.6);
         gyroLight.intensity = 3.6 + breath * 1.3;
         gyroLight.distance = 9.2;
@@ -1493,7 +1807,7 @@
           mat.emissiveIntensity = 1.85 + breath * 0.55;
         }
 
-        // Brillo temporal de la escultura: sube en 1.5s, sostiene 3s y se apaga suave en 2s (~6.5s total)
+        // Brillo temporal de la escultura (~6.5s)
         awakeningElapsed += dt;
         let glowFactor = 0.0;
         if (awakeningElapsed < 1.5) {
@@ -1558,6 +1872,10 @@
         unlockAudio();
         triggerMaterializationWave();
       });
+      btnFullscreen.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleFullscreen();
+      });
       btnEnterVR.addEventListener('click', () => { unlockAudio(); startXRSession('immersive-vr'); });
       btnEnterAR.addEventListener('click', () => { unlockAudio(); startXRSession('immersive-ar'); });
 
@@ -1609,6 +1927,7 @@
         if (k === 's' || e.key === 'ArrowDown') keysPressed.back = true;
         if (k === 'a' || e.key === 'ArrowLeft') keysPressed.left = true;
         if (k === 'd' || e.key === 'ArrowRight') keysPressed.right = true;
+        if (k === 'f') toggleFullscreen();
       });
       window.addEventListener('keyup', (e) => {
         const k = e.key.toLowerCase();
@@ -1749,7 +2068,6 @@
           leafParticles.visible = false;
           fireflies.visible = true;
 
-          // Fijar punto de referencia para detectar el primer paso (físico o joystick/WASD)
           const activeCam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
           stepOriginWalk.copy(currentWalkOffset);
           stepOriginCam.copy(activeCam.position);
