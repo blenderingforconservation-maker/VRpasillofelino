@@ -117,7 +117,7 @@
     <header class="w-full flex flex-wrap items-center justify-between gap-2">
       <div id="status-pill" class="flex items-center gap-2.5 bg-stone-950/85 border border-lime-400/35 rounded-full px-4 py-2 shadow-lg">
         <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-lime-400 animate-pulse"></span>
-        <span id="status-text" class="text-[11px] font-medium text-stone-100">Sala activa · Da un paso para iniciar el recorrido</span>
+        <span id="status-text" class="text-[11px] font-medium text-stone-100">Sala activa · Avanza por el pasillo</span>
       </div>
       <div class="interactive flex items-center gap-2 ml-auto">
         <button id="btn-replay-magic" class="px-3.5 py-2 rounded-full bg-stone-950/85 border border-yellow-300/40 text-yellow-200 text-[11px] font-medium active:scale-95 transition-transform">✨ Materializar Hojas</button>
@@ -168,16 +168,16 @@
       gyroscope: `${REPO_RAW_BASE}models/goldengirosc_optimizado.glb`
     };
 
-    // Carpeta audio/ en el repositorio de GitHub
+    // Carpeta audios/ exacta del repositorio VRpasillofelino
     const AUDIO_FILES = {
-      step: `${REPO_RAW_BASE}audio/01_primer_paso.mp3`,
-      pickup: `${REPO_RAW_BASE}audio/02_objeto_magico.mp3`,
-      awaken: `${REPO_RAW_BASE}audio/03_escultura_despierta.mp3`
+      intro: `${REPO_RAW_BASE}audios/intro.mp3`,
+      pickup: `${REPO_RAW_BASE}audios/objeto-magico.mp3`,
+      awaken: `${REPO_RAW_BASE}audios/audio_escultura.mp3`
     };
 
-    // Respaldo con citas verificadas de Leonora Carrington mientras subes los MP3
+    // Respaldo hablado en caso de fallo de red
     const FALLBACK_TEXTS = {
-      step: 'El arte es una magia que hace que las horas se desvanezcan e incluso los días se disuelvan en segundos.',
+      intro: 'El arte es una magia que hace que las horas se desvanezcan e incluso los días se disuelvan en segundos.',
       pickup: 'Uno debe tener mucho cuidado con lo que se lleva cuando se marcha para siempre; algo aparentemente inútil puede volverse esencial bajo circunstancias específicas.',
       awaken: 'Si hay dioses, no los creo con forma humana, prefiero pensar a los dioses en forma de cebras, gatos, pájaros. Puede que no creas en la magia, pero algo muy extraño está sucediendo en este preciso momento.'
     };
@@ -197,12 +197,12 @@
     let sculptureGroup = null;
     let sculptureLocalBox = new THREE.Box3();
     let sculptureCenterLocal = new THREE.Vector3();
+    let sculptureSizeLocal = new THREE.Vector3();
     let sculptureOrbitRadius = 0.78;
     let sculptureLight = null;
-    let sculptureAwakenLight = null;
-    const sculptureMaterialStates = [];
 
     let gyroGroup = null;
+    let gyroAimPivot = null;
     let gyroModel = null;
     let gyroHitSphere = null;
     let gyroLight = null;
@@ -210,21 +210,34 @@
     let gyroRestPosition = new THREE.Vector3();
     const gyroMaterials = [];
 
-    // Resplandor llamativo detrás de la parte baja de los barrotes de la reja
-    let gateBeaconGroup = null;
-    let gateBeaconLight = null;
-    let gateGlowSpriteWide = null;
-    let gateGlowSpriteCore = null;
-    let gateFloorGlowMesh = null;
-    let gateSparks = null;
-    let gateSparksMat = null;
-    let gateBeaconFade = 1.0;
+    // Marco brillante de la puerta de la reja (visible desde el pasillo)
+    let gateDoorFrameGroup = null;
+    let gateDoorFrameLight = null;
+    let gateFrameCoreMat = null;
+    let gateFrameGlowMat = null;
+    let gateFrameThresholdMat = null;
+    let gateFrameSparks = null;
+    let gateFrameSparksMat = null;
+    let gateDoorFrameFade = 1.0;
 
-    let awakenParticles = null;
-    let awakenParticleMat = null;
+    // Flujo de partículas de transferencia (esencia de la vida: objeto -> escultura)
+    const TRANSFER_COUNT = 220;
+    let transferPoints = null;
+    let transferPositions = null;
+    let transferProgress = null;
+    let transferSpeeds = null;
+    let transferSizes = null;
+    let transferOffsets = null;
+    let transferTargets = null;
+    let transferStreamActive = false;
+    let transferStreamFade = 0;
 
-    // Estela densa de partículas de brillo fino que deja el giroscopio al levitar
-    const TRAIL_COUNT = 380;
+    // Partículas luminosas tipo "arena mágica" flotando alrededor de la escultura activada
+    let magicSandPoints = null;
+    let magicSandMat = null;
+
+    // Estela de partículas del objeto mágico al flotar (brillo moderado para distinguir el objeto)
+    const TRAIL_COUNT = 340;
     let trailPoints = null;
     let trailPositions = null;
     let trailLives = null;
@@ -234,16 +247,7 @@
     let trailCursor = 0;
     let trailSpawnAccum = 0;
 
-    // Anillo de chispas en el instante exacto del anclaje mágico (50 cm)
-    const BURST_COUNT = 56;
-    let burstPoints = null;
-    let burstPositions = null;
-    let burstVelocities = null;
-    let burstLives = null;
-    let burstSizes = null;
-    let burstActive = false;
-
-    // Estado narrativo y control de primer paso
+    // Estado narrativo y control de audio a medio pasillo
     let artifactState = ARTIFACT_STATE.EXPLORACION;
     let carryingMode = null; // 'xr' | 'camera' | null
     let carryingController = null;
@@ -251,10 +255,7 @@
     let awakeningElapsed = 0;
     let lastHapticTime = 0;
 
-    let hasTriggeredFirstStep = false;
-    let stepOriginReady = false;
-    const stepOriginWalk = new THREE.Vector3();
-    const stepOriginCam = new THREE.Vector3();
+    let hasTriggeredMidCorridor = false;
 
     // Estado de pantalla completa (PC, Android y fallback inmersivo iPhone/iOS)
     let isPseudoFullscreen = false;
@@ -284,24 +285,30 @@
     let yaw = 0;
     let pitch = 0;
 
-    // Vectores y colores reutilizables (cero GC en renderLoop)
+    // Vectores, matrices y cuaterniones reutilizables (cero GC en renderLoop)
     const _rayDir = new THREE.Vector3();
     const _horizDir = new THREE.Vector3();
     const _localForward = new THREE.Vector3();
     const _localRight = new THREE.Vector3();
     const _invAnchorQuat = new THREE.Quaternion();
     const _tempMatrix = new THREE.Matrix4();
+    const _aimMatrix = new THREE.Matrix4();
+    const _targetQuat = new THREE.Quaternion();
+    const _upVec = new THREE.Vector3(0, 1, 0);
     const _tempVecA = new THREE.Vector3();
     const _tempVecB = new THREE.Vector3();
+    const _magDir = new THREE.Vector3();
+    const _camLocalPos = new THREE.Vector3();
+    const _midCtrl = new THREE.Vector3();
     const _goldColor = new THREE.Color(0xfbbf24);
-    const _goldIncandescent = new THREE.Color(0xfff1a8);
+    const _goldWarm = new THREE.Color(0xfde68a);
 
-    // Motor de audio de 3 pistas con anti-empalme (fade-out suave)
+    // Motor de audio de 3 pistas con crossfade anti-empalme
     let audioCtx = null;
     let audioListener = null;
     const narrationTracks = {
-      step: { audio: null, loaded: false, volume: 0.92 },
-      pickup: { audio: null, loaded: false, volume: 0.92 },
+      intro: { audio: null, loaded: false, volume: 0.94 },
+      pickup: { audio: null, loaded: false, volume: 0.94 },
       awaken: { audio: null, loaded: false, volume: 0.98 }
     };
     let activeTrackKey = null;
@@ -372,7 +379,6 @@
       unlockAudio();
       const nativeEl = getNativeFullscreenElement();
 
-      // Salir de pantalla completa nativa o modo inmersivo iOS
       if (nativeEl) {
         try {
           if (document.exitFullscreen) await document.exitFullscreen();
@@ -390,7 +396,6 @@
         return;
       }
 
-      // Intentar Fullscreen nativo en PC y Android
       if (supportsNativeFullscreen()) {
         const target = document.documentElement;
         try {
@@ -408,7 +413,6 @@
         }
       }
 
-      // Fallback completo y fluido para iPhone (iOS Safari) y navegadores embebidos
       isPseudoFullscreen = true;
       updateFullscreenUI();
       window.scrollTo(0, 1);
@@ -416,7 +420,7 @@
       showToast('Vista inmersiva activa · Toca el botón superior para salir');
     }
 
-    // --- SISTEMA DE 3 AUDIOS CON CROSSFADE ANTI-EMPALME ---
+    // --- SISTEMA DE 3 AUDIOS DEL REPOSITORIO CON CROSSFADE ANTI-EMPALME ---
     function unlockAudio() {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
       if (!audioCtx && AudioContextClass) {
@@ -434,13 +438,13 @@
       audioListener = new THREE.AudioListener();
       camera.add(audioListener);
 
-      narrationTracks.step.audio = new THREE.Audio(audioListener);
+      narrationTracks.intro.audio = new THREE.Audio(audioListener);
       narrationTracks.pickup.audio = new THREE.Audio(audioListener);
 
       const posAudio = new THREE.PositionalAudio(audioListener);
-      posAudio.setRefDistance(2.4);
-      posAudio.setMaxDistance(18.0);
-      posAudio.setRolloffFactor(1.05);
+      posAudio.setRefDistance(2.8);
+      posAudio.setMaxDistance(20.0);
+      posAudio.setRolloffFactor(0.95);
       narrationTracks.awaken.audio = posAudio;
 
       const loader = new THREE.AudioLoader();
@@ -453,7 +457,8 @@
             narrationTracks[key].loaded = true;
           },
           undefined,
-          () => {
+          (err) => {
+            console.warn(`No se pudo cargar ${AUDIO_FILES[key]}:`, err);
             narrationTracks[key].loaded = false;
           }
         );
@@ -542,12 +547,12 @@
         osc.type = 'sine';
         osc.frequency.setValueAtTime(freq, now + idx * 0.06);
         gain.gain.setValueAtTime(0.0001, now + idx * 0.06);
-        gain.gain.exponentialRampToValueAtTime(0.06, now + idx * 0.06 + 0.03);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.06 + 0.75);
+        gain.gain.exponentialRampToValueAtTime(0.055, now + idx * 0.06 + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.06 + 0.72);
         osc.connect(gain);
         gain.connect(audioCtx.destination);
         osc.start(now + idx * 0.06);
-        osc.stop(now + idx * 0.06 + 0.8);
+        osc.stop(now + idx * 0.06 + 0.78);
       });
     }
 
@@ -562,12 +567,12 @@
         osc.type = i < 2 ? 'triangle' : 'sine';
         osc.frequency.setValueAtTime(freq, now);
         gain.gain.setValueAtTime(0.0001, now);
-        gain.gain.exponentialRampToValueAtTime(i < 2 ? 0.045 : 0.032, now + 0.9);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + 5.8);
+        gain.gain.exponentialRampToValueAtTime(i < 2 ? 0.04 : 0.028, now + 0.85);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 5.2);
         osc.connect(gain);
         gain.connect(audioCtx.destination);
         osc.start(now);
-        osc.stop(now + 6.0);
+        osc.stop(now + 5.4);
       });
     }
 
@@ -605,7 +610,7 @@
       renderer.localClippingEnabled = false;
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.22;
+      renderer.toneMappingExposure = 1.20;
       container.appendChild(renderer.domElement);
 
       setupLighting();
@@ -625,7 +630,7 @@
       setupMagicalLeafMaterialization();
       setupFireflies();
       setupGyroTrailParticles();
-      setupSnapBurstParticles();
+      setupTransferStreamParticles();
       await loadModelsParallel();
 
       setupUIAndDesktopControls();
@@ -703,15 +708,15 @@
       artifactState = ARTIFACT_STATE.PORTANDO;
       carryingMode = mode;
       carryingController = controller;
-      hasTriggeredFirstStep = true;
+      hasTriggeredMidCorridor = true;
 
       playPickupChime();
       playNarrativeTrack('pickup');
       if (controller) triggerHaptic(controller, 0.65, 130);
 
       statusDot.className = 'w-2.5 h-2.5 rounded-full bg-yellow-300 animate-ping';
-      statusText.textContent = 'Artefacto en mano · Acércalo a la escultura (sigue su pulso)';
-      showToast('✨ Giroscopio dorado tomado · Acércalo a la escultura');
+      statusText.textContent = 'Objeto mágico tomado · Sigue su atracción hacia la escultura';
+      showToast('✨ El objeto mágico señala hacia la escultura...');
     }
 
     function tryGrabGyroWithController(controller) {
@@ -719,7 +724,7 @@
 
       controller.getWorldPosition(_tempVecA);
       gyroGroup.getWorldPosition(_tempVecB);
-      const directReach = _tempVecA.distanceTo(_tempVecB) <= 0.75;
+      const directReach = _tempVecA.distanceTo(_tempVecB) <= 0.78;
       const rayHit = isControllerPointingAtGyro(controller);
 
       if (directReach || rayHit) {
@@ -766,10 +771,10 @@
       const canvas = document.createElement('canvas');
       canvas.width = 256; canvas.height = 256;
       const ctx = canvas.getContext('2d');
-      const grad = ctx.createRadialGradient(128, 128, 6, 128, 128, 126);
-      grad.addColorStop(0.0, 'rgba(255, 253, 232, 0.98)');
-      grad.addColorStop(0.22, 'rgba(254, 240, 138, 0.72)');
-      grad.addColorStop(0.52, 'rgba(250, 204, 21, 0.28)');
+      const grad = ctx.createRadialGradient(128, 128, 8, 128, 128, 124);
+      grad.addColorStop(0.0, 'rgba(255, 249, 212, 0.65)');
+      grad.addColorStop(0.28, 'rgba(253, 224, 71, 0.36)');
+      grad.addColorStop(0.62, 'rgba(245, 158, 11, 0.12)');
       grad.addColorStop(1.0, 'rgba(245, 158, 11, 0.0)');
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, 256, 256);
@@ -778,78 +783,106 @@
       return tex;
     }
 
-    // Resplandor llamativo detrás de los barrotes en la parte inferior del fondo del pasillo
-    function setupGateLowerBeacon(anchorPos, haloTex) {
-      gateBeaconGroup = new THREE.Group();
-      gateBeaconGroup.position.set(anchorPos.x, 0, anchorPos.z);
+    // --- MARCO LUMINOSO EN LA PUERTA DE LA REJA (VISIBLE DESDE EL PASILLO) ---
+    function setupGateDoorFrame(frameCenterX, frameBottomY, frameZ, frameWidth, frameHeight) {
+      gateDoorFrameGroup = new THREE.Group();
+      gateDoorFrameGroup.position.set(frameCenterX, frameBottomY, frameZ);
 
-      // 1. Luz real cálida-dorada que se filtra entre los barrotes e ilumina el suelo del pasillo
-      gateBeaconLight = new THREE.PointLight(0xfacc15, 4.8, 12.5, 1.45);
-      gateBeaconLight.position.set(0, 0.52, 0.15);
-      gateBeaconGroup.add(gateBeaconLight);
+      const halfW = frameWidth * 0.5;
+      const coreThickness = 0.036;
+      const glowThickness = 0.115;
 
-      // 2. Resplandor atmosférico ancho detrás de la parte baja de los barrotes (muy visible desde el pasillo)
-      const wideMat = new THREE.SpriteMaterial({
-        map: haloTex,
+      gateFrameCoreMat = new THREE.MeshBasicMaterial({
+        color: 0xfef9c3,
+        transparent: true,
+        opacity: 0.92,
+        toneMapped: false
+      });
+
+      gateFrameGlowMat = new THREE.MeshBasicMaterial({
+        color: 0xd9f99d,
+        transparent: true,
+        opacity: 0.36,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        toneMapped: false
+      });
+
+      gateFrameThresholdMat = new THREE.MeshBasicMaterial({
         color: 0xfde047,
         transparent: true,
-        opacity: 0.72,
+        opacity: 0.55,
         blending: THREE.AdditiveBlending,
-        depthWrite: false
+        depthWrite: false,
+        toneMapped: false
       });
-      gateGlowSpriteWide = new THREE.Sprite(wideMat);
-      gateGlowSpriteWide.position.set(0, 0.56, -0.08);
-      gateGlowSpriteWide.scale.set(3.2, 1.55, 1);
-      gateGlowSpriteWide.renderOrder = 3;
-      gateBeaconGroup.add(gateGlowSpriteWide);
 
-      // 3. Núcleo dorado intenso justo a nivel bajo detrás de la reja
-      const coreMat = new THREE.SpriteMaterial({
-        map: haloTex,
-        color: 0xfffbeb,
-        transparent: true,
-        opacity: 0.88,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false
-      });
-      gateGlowSpriteCore = new THREE.Sprite(coreMat);
-      gateGlowSpriteCore.position.set(0, 0.42, 0.02);
-      gateGlowSpriteCore.scale.set(1.65, 1.05, 1);
-      gateGlowSpriteCore.renderOrder = 4;
-      gateBeaconGroup.add(gateGlowSpriteCore);
+      // Helper para crear un segmento luminoso (núcleo nítido + halo suave alrededor)
+      const addGlowingBar = (w, h, d, x, y, z) => {
+        const coreMesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), gateFrameCoreMat);
+        coreMesh.position.set(x, y, z);
+        coreMesh.renderOrder = 4;
+        gateDoorFrameGroup.add(coreMesh);
 
-      // 4. Charco de luz dorada proyectado sobre el suelo atravesando los barrotes hacia el pasillo
-      const floorGeo = new THREE.PlaneGeometry(3.4, 3.2).rotateX(-Math.PI / 2);
-      const floorMat = new THREE.MeshBasicMaterial({
-        map: haloTex,
-        color: 0xfbbf24,
-        transparent: true,
-        opacity: 0.58,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false
-      });
-      gateFloorGlowMesh = new THREE.Mesh(floorGeo, floorMat);
-      gateFloorGlowMesh.position.set(0, 0.035, 0.55);
-      gateFloorGlowMesh.renderOrder = 2;
-      gateBeaconGroup.add(gateFloorGlowMesh);
+        const glowMesh = new THREE.Mesh(
+          new THREE.BoxGeometry(w + glowThickness, h + glowThickness * 0.45, d + glowThickness),
+          gateFrameGlowMat
+        );
+        glowMesh.position.set(x, y, z);
+        glowMesh.renderOrder = 3;
+        gateDoorFrameGroup.add(glowMesh);
+      };
 
-      // 5. Partículas finas ascendentes detrás de los barrotes inferiores (1 draw call)
-      const sparkCount = 90;
+      // Jamba izquierda, jamba derecha y dintel superior de la puerta
+      addGlowingBar(coreThickness, frameHeight, coreThickness, -halfW, frameHeight * 0.5, 0);
+      addGlowingBar(coreThickness, frameHeight, coreThickness, halfW, frameHeight * 0.5, 0);
+      addGlowingBar(frameWidth + coreThickness, coreThickness, coreThickness, 0, frameHeight, 0);
+
+      // Línea sutil luminosa en el umbral del suelo para reforzar la invitación a entrar
+      const thresholdMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(frameWidth, 0.022, 0.08),
+        gateFrameThresholdMat
+      );
+      thresholdMesh.position.set(0, 0.015, 0.02);
+      thresholdMesh.renderOrder = 3;
+      gateDoorFrameGroup.add(thresholdMesh);
+
+      // Luz suave desde el dintel hacia el pasillo para iluminar los bordes del marco
+      gateDoorFrameLight = new THREE.PointLight(0xfde047, 2.2, 8.5, 1.6);
+      gateDoorFrameLight.position.set(0, frameHeight * 0.65, 0.42);
+      gateDoorFrameGroup.add(gateDoorFrameLight);
+
+      // Chispas delicadas recorriendo exclusivamente el perímetro del marco de la puerta
+      const sparkCount = 84;
       const geo = new THREE.BufferGeometry();
       const pos = new Float32Array(sparkCount * 3);
       const seeds = new Float32Array(sparkCount * 3);
       for (let i = 0; i < sparkCount; i++) {
-        pos[i * 3] = (Math.random() - 0.5) * 2.1;
-        pos[i * 3 + 1] = 0.05 + Math.random() * 1.45;
-        pos[i * 3 + 2] = (Math.random() - 0.5) * 0.75;
+        const seg = i % 3;
+        if (seg === 0) {
+          // Jamba izquierda
+          pos[i * 3] = -halfW + (Math.random() - 0.5) * 0.08;
+          pos[i * 3 + 1] = Math.random() * frameHeight;
+          pos[i * 3 + 2] = (Math.random() - 0.5) * 0.08;
+        } else if (seg === 1) {
+          // Jamba derecha
+          pos[i * 3] = halfW + (Math.random() - 0.5) * 0.08;
+          pos[i * 3 + 1] = Math.random() * frameHeight;
+          pos[i * 3 + 2] = (Math.random() - 0.5) * 0.08;
+        } else {
+          // Dintel superior
+          pos[i * 3] = (Math.random() - 0.5) * frameWidth;
+          pos[i * 3 + 1] = frameHeight + (Math.random() - 0.5) * 0.08;
+          pos[i * 3 + 2] = (Math.random() - 0.5) * 0.08;
+        }
         seeds[i * 3] = Math.random() * Math.PI * 2;
-        seeds[i * 3 + 1] = 0.25 + Math.random() * 0.55;
-        seeds[i * 3 + 2] = 10.0 + Math.random() * 14.0;
+        seeds[i * 3 + 1] = 0.25 + Math.random() * 0.45;
+        seeds[i * 3 + 2] = 7.5 + Math.random() * 9.0;
       }
       geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
       geo.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 3));
 
-      gateSparksMat = new THREE.ShaderMaterial({
+      gateFrameSparksMat = new THREE.ShaderMaterial({
         transparent: true,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
@@ -869,15 +902,14 @@
             vec3 p = position;
             float phase = aSeed.x;
             float speed = aSeed.y;
-            p.y = mod(p.y + uTime * speed * 0.45, 1.55);
-            p.x += sin(uTime * 1.4 + phase) * 0.14;
-            p.z += cos(uTime * 1.2 + phase) * 0.10;
-            float hFade = smoothstep(0.0, 0.22, p.y) * (1.0 - smoothstep(1.05, 1.55, p.y));
-            float twinkle = 0.55 + 0.45 * sin(uTime * 6.5 + phase * 3.0);
-            vAlpha = hFade * twinkle * uOpacity;
+            p.x += sin(uTime * 1.8 + phase) * 0.035;
+            p.y += sin(uTime * (1.2 + speed) + phase * 2.0) * 0.05;
+            p.z += cos(uTime * 1.6 + phase) * 0.035;
+            float twinkle = 0.45 + 0.55 * sin(uTime * 5.2 + phase * 3.0);
+            vAlpha = twinkle * uOpacity;
             vec4 mvPos = modelViewMatrix * vec4(p, 1.0);
             gl_Position = projectionMatrix * mvPos;
-            gl_PointSize = clamp((aSeed.z * uPixelRatio) / max(-mvPos.z, 0.6), 1.5, 22.0);
+            gl_PointSize = clamp((aSeed.z * uPixelRatio) / max(-mvPos.z, 0.6), 1.5, 16.0);
           }
         `,
         fragmentShader: `
@@ -886,57 +918,53 @@
             if (vAlpha < 0.01) discard;
             vec2 p = (gl_PointCoord - vec2(0.5)) * 2.0;
             float d = length(p);
-            float core = exp(-d * d * 7.0);
-            float star = max(0.0, 1.0 - abs(p.x * p.y) * 16.0) * exp(-d * d * 2.8);
-            float a = (core * 0.9 + star * 0.5) * vAlpha;
+            float core = exp(-d * d * 7.5);
+            float a = core * vAlpha;
             if (a < 0.01) discard;
-            vec3 col = mix(vec3(1.0, 0.74, 0.16), vec3(1.0, 0.99, 0.85), core);
-            gl_FragColor = vec4(col * 1.7, a);
+            vec3 col = mix(vec3(0.85, 0.98, 0.45), vec3(1.0, 0.99, 0.85), core);
+            gl_FragColor = vec4(col * 1.35, a);
           }
         `
       });
 
-      gateSparks = new THREE.Points(geo, gateSparksMat);
-      gateSparks.frustumCulled = false;
-      gateSparks.renderOrder = 4;
-      gateBeaconGroup.add(gateSparks);
+      gateFrameSparks = new THREE.Points(geo, gateFrameSparksMat);
+      gateFrameSparks.frustumCulled = false;
+      gateFrameSparks.renderOrder = 4;
+      gateDoorFrameGroup.add(gateFrameSparks);
 
-      interiorGroup.add(gateBeaconGroup);
+      interiorGroup.add(gateDoorFrameGroup);
     }
 
-    function updateGateLowerBeacon(dt, timeSec) {
-      if (!gateBeaconGroup) return;
+    function updateGateDoorFrame(dt, timeSec) {
+      if (!gateDoorFrameGroup) return;
 
       const targetFade = (artifactState === ARTIFACT_STATE.EXPLORACION && !isMaterializing) ? 1.0 : 0.0;
-      const speed = targetFade > gateBeaconFade ? 1.6 : 1.4;
-      gateBeaconFade = THREE.MathUtils.lerp(gateBeaconFade, targetFade, Math.min(1, dt * speed));
+      const speed = targetFade > gateDoorFrameFade ? 1.8 : 1.5;
+      gateDoorFrameFade = THREE.MathUtils.lerp(gateDoorFrameFade, targetFade, Math.min(1, dt * speed));
 
-      if (gateBeaconFade < 0.005) {
-        gateBeaconGroup.visible = false;
+      if (gateDoorFrameFade < 0.005) {
+        gateDoorFrameGroup.visible = false;
         return;
       }
 
-      gateBeaconGroup.visible = true;
-      const wave = 0.5 + 0.5 * Math.sin(timeSec * 2.35);
-      const shimmer = 0.5 + 0.5 * Math.sin(timeSec * 4.8 + 1.2);
+      gateDoorFrameGroup.visible = true;
+      const pulse = 0.5 + 0.5 * Math.sin(timeSec * 2.2);
 
-      if (gateBeaconLight) {
-        gateBeaconLight.intensity = (4.2 + wave * 2.2 + shimmer * 0.5) * gateBeaconFade;
+      if (gateFrameCoreMat) {
+        gateFrameCoreMat.opacity = (0.78 + pulse * 0.22) * gateDoorFrameFade;
       }
-      if (gateGlowSpriteWide) {
-        gateGlowSpriteWide.material.opacity = (0.58 + wave * 0.24) * gateBeaconFade;
-        gateGlowSpriteWide.scale.set(3.0 + wave * 0.45, 1.45 + wave * 0.25, 1);
+      if (gateFrameGlowMat) {
+        gateFrameGlowMat.opacity = (0.24 + pulse * 0.22) * gateDoorFrameFade;
       }
-      if (gateGlowSpriteCore) {
-        gateGlowSpriteCore.material.opacity = (0.76 + shimmer * 0.22) * gateBeaconFade;
-        gateGlowSpriteCore.scale.set(1.55 + shimmer * 0.25, 0.95 + wave * 0.2, 1);
+      if (gateFrameThresholdMat) {
+        gateFrameThresholdMat.opacity = (0.38 + pulse * 0.25) * gateDoorFrameFade;
       }
-      if (gateFloorGlowMesh) {
-        gateFloorGlowMesh.material.opacity = (0.46 + wave * 0.22) * gateBeaconFade;
+      if (gateDoorFrameLight) {
+        gateDoorFrameLight.intensity = (1.6 + pulse * 1.1) * gateDoorFrameFade;
       }
-      if (gateSparksMat) {
-        gateSparksMat.uniforms.uTime.value = timeSec;
-        gateSparksMat.uniforms.uOpacity.value = 0.95 * gateBeaconFade;
+      if (gateFrameSparksMat) {
+        gateFrameSparksMat.uniforms.uTime.value = timeSec;
+        gateFrameSparksMat.uniforms.uOpacity.value = 0.85 * gateDoorFrameFade;
       }
     }
 
@@ -1049,7 +1077,7 @@
 
       fireflyMaterial = new THREE.ShaderMaterial({
         transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
-        uniforms: { uTime: { value: 0 }, uPixelRatio: { value: renderer.getPixelRatio() }, uOpacity: { value: 0.88 } },
+        uniforms: { uTime: { value: 0 }, uPixelRatio: { value: renderer.getPixelRatio() }, uOpacity: { value: 0.85 } },
         vertexShader: `
           attribute float aSeed; attribute vec4 aTraits; attribute vec3 aColor;
           uniform float uTime; uniform float uPixelRatio;
@@ -1100,7 +1128,7 @@
       walkStageGroup.add(fireflies);
     }
 
-    // Estela densa de polvo y micro-chispas finas alrededor del giroscopio al levitar
+    // Estela de polvo fino del giroscopio al flotar (brillo atenuado para distinguir con nitidez el objeto y su movimiento)
     function setupGyroTrailParticles() {
       const geo = new THREE.BufferGeometry();
       trailPositions = new Float32Array(TRAIL_COUNT * 3);
@@ -1112,7 +1140,7 @@
       for (let i = 0; i < TRAIL_COUNT; i++) {
         trailLives[i] = 0;
         trailMaxLives[i] = 1;
-        trailSizes[i] = 7.0 + Math.random() * 10.0;
+        trailSizes[i] = 4.5 + Math.random() * 5.5;
         trailPhases[i] = Math.random() * Math.PI * 2;
       }
 
@@ -1140,11 +1168,11 @@
           varying float vTwinkle;
           void main() {
             vLife = aLife;
-            vTwinkle = 0.65 + 0.35 * sin(uTime * 11.0 + aPhase * 5.0);
+            vTwinkle = 0.65 + 0.35 * sin(uTime * 9.0 + aPhase * 5.0);
             vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
             gl_Position = projectionMatrix * mvPosition;
-            float size = aSize * (0.30 + 0.70 * aLife);
-            gl_PointSize = clamp((size * uPixelRatio) / max(-mvPosition.z, 0.42), 1.0, 22.0) * step(0.005, aLife);
+            float size = aSize * (0.35 + 0.65 * aLife);
+            gl_PointSize = clamp((size * uPixelRatio) / max(-mvPosition.z, 0.45), 1.0, 14.0) * step(0.005, aLife);
           }
         `,
         fragmentShader: `
@@ -1154,12 +1182,12 @@
             if (vLife <= 0.005) discard;
             vec2 p = (gl_PointCoord - vec2(0.5)) * 2.0;
             float d = length(p);
-            float core = exp(-d * d * 8.5);
-            float crossStar = max(0.0, 1.0 - abs(p.x * p.y) * 18.0) * exp(-d * d * 3.0);
-            float alpha = (core * 0.90 + crossStar * 0.60) * (vLife * vLife) * vTwinkle;
-            if (alpha < 0.01) discard;
-            vec3 col = mix(vec3(1.0, 0.78, 0.18), vec3(1.0, 0.99, 0.88), core);
-            gl_FragColor = vec4(col * 1.75, alpha);
+            float core = exp(-d * d * 9.5);
+            float crossStar = max(0.0, 1.0 - abs(p.x * p.y) * 20.0) * exp(-d * d * 3.8);
+            float alpha = (core * 0.52 + crossStar * 0.28) * (vLife * vLife) * vTwinkle * 0.68;
+            if (alpha < 0.008) discard;
+            vec3 col = mix(vec3(0.95, 0.72, 0.22), vec3(1.0, 0.94, 0.72), core);
+            gl_FragColor = vec4(col * 0.92, alpha);
           }
         `
       });
@@ -1171,7 +1199,7 @@
       interiorGroup.add(trailPoints);
     }
 
-    function updateGyroTrail(dt, timeSec, emitPos) {
+    function updateGyroTrail(dt, timeSec, emitPos, spawnRateSec = 0.015) {
       if (!trailPoints) return;
       trailPoints.material.uniforms.uTime.value = timeSec;
 
@@ -1179,29 +1207,29 @@
       for (let i = 0; i < TRAIL_COUNT; i++) {
         if (trailLives[i] > 0) {
           trailLives[i] = Math.max(0, trailLives[i] - dt / trailMaxLives[i]);
-          trailPositions[i * 3] += Math.cos(timeSec * 2.4 + trailPhases[i]) * dt * 0.035;
-          trailPositions[i * 3 + 1] += dt * 0.11;
-          trailPositions[i * 3 + 2] += Math.sin(timeSec * 2.4 + trailPhases[i]) * dt * 0.035;
+          trailPositions[i * 3] += Math.cos(timeSec * 2.2 + trailPhases[i]) * dt * 0.025;
+          trailPositions[i * 3 + 1] += dt * 0.075;
+          trailPositions[i * 3 + 2] += Math.sin(timeSec * 2.2 + trailPhases[i]) * dt * 0.025;
           if (trailLives[i] > 0) anyAlive = true;
         }
       }
 
       if (emitPos) {
         trailSpawnAccum += dt;
-        const spawnInterval = 0.010;
-        while (trailSpawnAccum >= spawnInterval) {
-          trailSpawnAccum -= spawnInterval;
+        while (trailSpawnAccum >= spawnRateSec) {
+          trailSpawnAccum -= spawnRateSec;
           const idx = trailCursor;
           trailCursor = (trailCursor + 1) % TRAIL_COUNT;
 
+          // Emitir en un anillo periférico suave alrededor del borde del giroscopio para no tapar su silueta
           const a = Math.random() * Math.PI * 2;
-          const r = Math.random() * 0.21;
+          const r = 0.14 + Math.random() * 0.10;
           trailPositions[idx * 3] = emitPos.x + Math.cos(a) * r;
-          trailPositions[idx * 3 + 1] = emitPos.y + (Math.random() - 0.5) * 0.24;
+          trailPositions[idx * 3 + 1] = emitPos.y + (Math.random() - 0.5) * 0.16;
           trailPositions[idx * 3 + 2] = emitPos.z + Math.sin(a) * r;
-          trailMaxLives[idx] = 1.25 + Math.random() * 0.70;
+          trailMaxLives[idx] = 1.05 + Math.random() * 0.65;
           trailLives[idx] = 1.0;
-          trailSizes[idx] = 6.5 + Math.random() * 10.5;
+          trailSizes[idx] = 4.2 + Math.random() * 5.2;
           trailPhases[idx] = Math.random() * Math.PI * 2;
           anyAlive = true;
         }
@@ -1215,169 +1243,258 @@
       }
     }
 
-    // Estallido circular de chispas en el instante del anclaje mágico (50 cm)
-    function setupSnapBurstParticles() {
+    // --- FLUJO DE TRANSFERENCIA DE ESENCIA DE VIDA (GIROSCOPIO -> ESCULTURA) ---
+    function setupTransferStreamParticles() {
       const geo = new THREE.BufferGeometry();
-      burstPositions = new Float32Array(BURST_COUNT * 3);
-      burstVelocities = new Float32Array(BURST_COUNT * 3);
-      burstLives = new Float32Array(BURST_COUNT);
-      burstSizes = new Float32Array(BURST_COUNT);
+      transferPositions = new Float32Array(TRANSFER_COUNT * 3);
+      transferProgress = new Float32Array(TRANSFER_COUNT);
+      transferSpeeds = new Float32Array(TRANSFER_COUNT);
+      transferSizes = new Float32Array(TRANSFER_COUNT);
+      transferOffsets = new Float32Array(TRANSFER_COUNT * 3);
+      transferTargets = new Float32Array(TRANSFER_COUNT * 3);
 
-      geo.setAttribute('position', new THREE.BufferAttribute(burstPositions, 3));
-      geo.setAttribute('aLife', new THREE.BufferAttribute(burstLives, 1));
-      geo.setAttribute('aSize', new THREE.BufferAttribute(burstSizes, 1));
+      for (let i = 0; i < TRANSFER_COUNT; i++) {
+        transferProgress[i] = Math.random();
+        transferSpeeds[i] = 0.55 + Math.random() * 0.65;
+        transferSizes[i] = 8.0 + Math.random() * 11.0;
+        const angle = Math.random() * Math.PI * 2;
+        const rad = 0.22 + Math.random() * 0.45;
+        transferOffsets[i * 3] = Math.cos(angle) * rad;
+        transferOffsets[i * 3 + 1] = 0.18 + Math.random() * 0.55;
+        transferOffsets[i * 3 + 2] = Math.sin(angle) * rad;
+      }
+
+      geo.setAttribute('position', new THREE.BufferAttribute(transferPositions, 3));
+      geo.setAttribute('aProg', new THREE.BufferAttribute(transferProgress, 1));
+      geo.setAttribute('aSize', new THREE.BufferAttribute(transferSizes, 1));
 
       const mat = new THREE.ShaderMaterial({
         transparent: true,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
         toneMapped: false,
-        uniforms: { uPixelRatio: { value: renderer.getPixelRatio() } },
-        vertexShader: `
-          attribute float aLife;
-          attribute float aSize;
-          uniform float uPixelRatio;
-          varying float vLife;
-          void main() {
-            vLife = aLife;
-            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-            gl_Position = projectionMatrix * mvPosition;
-            gl_PointSize = clamp((aSize * aLife * uPixelRatio) / max(-mvPosition.z, 0.45), 1.0, 26.0) * step(0.01, aLife);
-          }
-        `,
-        fragmentShader: `
-          varying float vLife;
-          void main() {
-            if (vLife <= 0.01) discard;
-            vec2 p = (gl_PointCoord - vec2(0.5)) * 2.0;
-            float d = length(p);
-            float core = exp(-d * d * 6.5);
-            float star = max(0.0, 1.0 - abs(p.x * p.y) * 16.0) * exp(-d * d * 2.5);
-            float alpha = (core + star * 0.7) * vLife;
-            if (alpha < 0.01) discard;
-            vec3 col = mix(vec3(1.0, 0.80, 0.20), vec3(1.0, 1.0, 0.90), core);
-            gl_FragColor = vec4(col * 1.9, alpha);
-          }
-        `
-      });
-
-      burstPoints = new THREE.Points(geo, mat);
-      burstPoints.frustumCulled = false;
-      burstPoints.visible = false;
-      burstPoints.renderOrder = 4;
-      interiorGroup.add(burstPoints);
-    }
-
-    function triggerSnapBurst(origin) {
-      if (!burstPoints) return;
-      for (let i = 0; i < BURST_COUNT; i++) {
-        const theta = (i / BURST_COUNT) * Math.PI * 2 + (Math.random() - 0.5) * 0.2;
-        const speed = 0.75 + Math.random() * 1.15;
-        burstPositions[i * 3] = origin.x;
-        burstPositions[i * 3 + 1] = origin.y;
-        burstPositions[i * 3 + 2] = origin.z;
-        burstVelocities[i * 3] = Math.cos(theta) * speed;
-        burstVelocities[i * 3 + 1] = (Math.random() - 0.35) * 0.95;
-        burstVelocities[i * 3 + 2] = Math.sin(theta) * speed;
-        burstLives[i] = 1.0;
-        burstSizes[i] = 12.0 + Math.random() * 12.0;
-      }
-      burstActive = true;
-      burstPoints.visible = true;
-      burstPoints.geometry.attributes.position.needsUpdate = true;
-      burstPoints.geometry.attributes.aLife.needsUpdate = true;
-      burstPoints.geometry.attributes.aSize.needsUpdate = true;
-    }
-
-    function updateSnapBurst(dt) {
-      if (!burstActive || !burstPoints) return;
-      let alive = false;
-      const drag = Math.max(0.0, 1.0 - dt * 2.4);
-      for (let i = 0; i < BURST_COUNT; i++) {
-        if (burstLives[i] > 0) {
-          burstLives[i] = Math.max(0, burstLives[i] - dt * 0.92);
-          burstPositions[i * 3] += burstVelocities[i * 3] * dt;
-          burstPositions[i * 3 + 1] += burstVelocities[i * 3 + 1] * dt;
-          burstPositions[i * 3 + 2] += burstVelocities[i * 3 + 2] * dt;
-          burstVelocities[i * 3] *= drag;
-          burstVelocities[i * 3 + 1] = burstVelocities[i * 3 + 1] * drag + dt * 0.15;
-          burstVelocities[i * 3 + 2] *= drag;
-          if (burstLives[i] > 0) alive = true;
-        }
-      }
-      burstActive = alive;
-      burstPoints.visible = alive;
-      if (alive) {
-        burstPoints.geometry.attributes.position.needsUpdate = true;
-        burstPoints.geometry.attributes.aLife.needsUpdate = true;
-      }
-    }
-
-    // Partículas doradas ascendentes alrededor de la escultura durante su brillo temporal
-    function setupAwakeningParticles(centerLocal, radiusXZ, height) {
-      const count = 180;
-      const geo = new THREE.BufferGeometry();
-      const positions = new Float32Array(count * 3);
-      const seeds = new Float32Array(count * 3);
-
-      for (let i = 0; i < count; i++) {
-        const angle = Math.random() * Math.PI * 2;
-        const r = 0.22 + Math.random() * (radiusXZ + 0.48);
-        positions[i * 3] = centerLocal.x + Math.cos(angle) * r;
-        positions[i * 3 + 1] = Math.random() * (height + 0.7);
-        positions[i * 3 + 2] = centerLocal.z + Math.sin(angle) * r;
-        seeds[i * 3] = Math.random() * Math.PI * 2;
-        seeds[i * 3 + 1] = 0.35 + Math.random() * 0.65;
-        seeds[i * 3 + 2] = 14.0 + Math.random() * 16.0;
-      }
-
-      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-      geo.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 3));
-
-      awakenParticleMat = new THREE.ShaderMaterial({
-        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
         uniforms: {
-          uTime: { value: 0 },
-          uIntensity: { value: 0 },
-          uMaxY: { value: height + 0.9 },
+          uFade: { value: 0 },
           uPixelRatio: { value: renderer.getPixelRatio() }
         },
         vertexShader: `
-          attribute vec3 aSeed;
-          uniform float uTime; uniform float uIntensity; uniform float uMaxY; uniform float uPixelRatio;
+          attribute float aProg;
+          attribute float aSize;
+          uniform float uFade;
+          uniform float uPixelRatio;
           varying float vAlpha;
+          varying float vProg;
           void main() {
-            vec3 pos = position;
-            float phase = aSeed.x; float speed = aSeed.y;
-            pos.y = mod(pos.y + uTime * speed * 0.65, uMaxY);
-            float swirl = uTime * 0.9 + phase;
-            pos.x += cos(swirl) * 0.12;
-            pos.z += sin(swirl) * 0.12;
-            float heightFade = smoothstep(0.0, 0.35, pos.y) * (1.0 - smoothstep(uMaxY * 0.72, uMaxY, pos.y));
-            float twinkle = 0.6 + 0.4 * sin(uTime * 5.0 + phase * 3.0);
-            vAlpha = heightFade * twinkle * uIntensity;
-            vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+            vProg = aProg;
+            float edge = smoothstep(0.0, 0.15, aProg) * (1.0 - smoothstep(0.84, 1.0, aProg));
+            vAlpha = edge * uFade;
+            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
             gl_Position = projectionMatrix * mvPosition;
-            gl_PointSize = clamp((aSeed.z * uPixelRatio) / max(-mvPosition.z, 0.5), 2.0, 28.0);
+            float s = aSize * (0.65 + 0.55 * sin(aProg * 3.14159));
+            gl_PointSize = clamp((s * uPixelRatio) / max(-mvPosition.z, 0.45), 1.5, 22.0) * step(0.01, vAlpha);
           }
         `,
         fragmentShader: `
           varying float vAlpha;
+          varying float vProg;
           void main() {
+            if (vAlpha < 0.01) discard;
             vec2 p = (gl_PointCoord - vec2(0.5)) * 2.0;
             float d = length(p);
-            float core = exp(-d * d * 5.5);
-            if (core * vAlpha < 0.01) discard;
-            vec3 col = mix(vec3(1.0, 0.76, 0.18), vec3(1.0, 0.98, 0.82), core);
-            gl_FragColor = vec4(col * 1.45, core * vAlpha);
+            float core = exp(-d * d * 7.0);
+            float star = max(0.0, 1.0 - abs(p.x * p.y) * 18.0) * exp(-d * d * 3.0);
+            float a = (core * 0.92 + star * 0.45) * vAlpha;
+            if (a < 0.01) discard;
+            vec3 goldEssence = mix(vec3(1.0, 0.80, 0.22), vec3(0.86, 1.0, 0.60), vProg * 0.45);
+            vec3 col = mix(goldEssence, vec3(1.0, 0.99, 0.88), core * 0.75);
+            gl_FragColor = vec4(col * 1.45, a);
           }
         `
       });
 
-      awakenParticles = new THREE.Points(geo, awakenParticleMat);
-      awakenParticles.frustumCulled = false;
-      awakenParticles.visible = false;
-      interiorGroup.add(awakenParticles);
+      transferPoints = new THREE.Points(geo, mat);
+      transferPoints.frustumCulled = false;
+      transferPoints.visible = false;
+      transferPoints.renderOrder = 4;
+      interiorGroup.add(transferPoints);
+    }
+
+    function initTransferTargets() {
+      for (let i = 0; i < TRANSFER_COUNT; i++) {
+        transferTargets[i * 3] = sculptureCenterLocal.x + (Math.random() - 0.5) * sculptureSizeLocal.x * 0.55;
+        transferTargets[i * 3 + 1] = sculptureLocalBox.min.y + 0.15 + Math.random() * Math.max(0.4, sculptureSizeLocal.y * 0.82);
+        transferTargets[i * 3 + 2] = sculptureCenterLocal.z + (Math.random() - 0.5) * sculptureSizeLocal.z * 0.55;
+        transferProgress[i] = Math.random();
+      }
+      transferStreamActive = true;
+      transferStreamFade = 0;
+      if (transferPoints) transferPoints.visible = true;
+    }
+
+    function updateTransferStream(dt, timeSec, originPos) {
+      if (!transferStreamActive || !transferPoints) return;
+
+      // Flujo intenso de transferencia de esencia durante ~5.2 segundos
+      let targetFade = 0;
+      if (awakeningElapsed < 0.45) {
+        targetFade = awakeningElapsed / 0.45;
+      } else if (awakeningElapsed < 3.9) {
+        targetFade = 1.0;
+      } else if (awakeningElapsed < 5.3) {
+        targetFade = 1.0 - (awakeningElapsed - 3.9) / 1.4;
+      } else {
+        targetFade = 0;
+        transferStreamActive = false;
+        transferPoints.visible = false;
+        return;
+      }
+
+      transferStreamFade = THREE.MathUtils.clamp(targetFade, 0, 1);
+      transferPoints.material.uniforms.uFade.value = transferStreamFade;
+
+      for (let i = 0; i < TRANSFER_COUNT; i++) {
+        let t = transferProgress[i] + dt * transferSpeeds[i];
+        if (t >= 1.0) {
+          t -= 1.0;
+          transferTargets[i * 3] = sculptureCenterLocal.x + (Math.random() - 0.5) * sculptureSizeLocal.x * 0.55;
+          transferTargets[i * 3 + 1] = sculptureLocalBox.min.y + 0.15 + Math.random() * Math.max(0.4, sculptureSizeLocal.y * 0.82);
+          transferTargets[i * 3 + 2] = sculptureCenterLocal.z + (Math.random() - 0.5) * sculptureSizeLocal.z * 0.55;
+        }
+        transferProgress[i] = t;
+
+        const tx = transferTargets[i * 3];
+        const ty = transferTargets[i * 3 + 1];
+        const tz = transferTargets[i * 3 + 2];
+
+        // Punto de control intermedio con espiral orgánica
+        const swirl = timeSec * 2.2 + i * 0.37;
+        _midCtrl.set(
+          (originPos.x + tx) * 0.5 + transferOffsets[i * 3] * Math.cos(swirl * 0.35),
+          (originPos.y + ty) * 0.5 + transferOffsets[i * 3 + 1],
+          (originPos.z + tz) * 0.5 + transferOffsets[i * 3 + 2] * Math.sin(swirl * 0.35)
+        );
+
+        // Curva Bézier cuadrática: B(t) = (1-t)^2*P0 + 2*(1-t)*t*P1 + t^2*P2
+        const inv = 1.0 - t;
+        const b0 = inv * inv;
+        const b1 = 2.0 * inv * t;
+        const b2 = t * t;
+
+        transferPositions[i * 3] = b0 * originPos.x + b1 * _midCtrl.x + b2 * tx;
+        transferPositions[i * 3 + 1] = b0 * originPos.y + b1 * _midCtrl.y + b2 * ty;
+        transferPositions[i * 3 + 2] = b0 * originPos.z + b1 * _midCtrl.z + b2 * tz;
+      }
+
+      transferPoints.geometry.attributes.position.needsUpdate = true;
+      transferPoints.geometry.attributes.aProg.needsUpdate = true;
+    }
+
+    // --- PARTÍCULAS LUMINOSAS TIPO "ARENA MÁGICA" FLOTANDO ALREDEDOR DE LA ESCULTURA ---
+    function setupMagicSandParticles(centerLocal, radiusXZ, minY, height) {
+      const count = 340;
+      const geo = new THREE.BufferGeometry();
+      const positions = new Float32Array(count * 3);
+      const seeds = new Float32Array(count * 4);
+      const colors = new Float32Array(count * 3);
+
+      const sandPalette = [
+        new THREE.Color('#fde68a'),
+        new THREE.Color('#fef3c7'),
+        new THREE.Color('#facc15'),
+        new THREE.Color('#ecfccb'),
+        new THREE.Color('#fffbeb')
+      ];
+
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const r = 0.24 + Math.random() * (radiusXZ + 0.52);
+        positions[i * 3] = centerLocal.x + Math.cos(angle) * r;
+        positions[i * 3 + 1] = minY + Math.random() * (height + 0.65);
+        positions[i * 3 + 2] = centerLocal.z + Math.sin(angle) * r;
+
+        seeds[i * 4] = Math.random() * Math.PI * 2; // fase
+        seeds[i * 4 + 1] = 0.14 + Math.random() * 0.34; // velocidad flotación suave
+        seeds[i * 4 + 2] = 5.5 + Math.random() * 8.5; // grano fino tipo arena mágica
+        seeds[i * 4 + 3] = 0.08 + Math.random() * 0.22; // radio de vaivén
+
+        const c = sandPalette[Math.floor(Math.random() * sandPalette.length)];
+        colors[i * 3] = c.r;
+        colors[i * 3 + 1] = c.g;
+        colors[i * 3 + 2] = c.b;
+      }
+
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 4));
+      geo.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
+
+      magicSandMat = new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false,
+        uniforms: {
+          uTime: { value: 0 },
+          uIntensity: { value: 0 },
+          uMinY: { value: minY },
+          uSpanY: { value: height + 0.85 },
+          uPixelRatio: { value: renderer.getPixelRatio() }
+        },
+        vertexShader: `
+          attribute vec4 aSeed;
+          attribute vec3 aColor;
+          uniform float uTime;
+          uniform float uIntensity;
+          uniform float uMinY;
+          uniform float uSpanY;
+          uniform float uPixelRatio;
+          varying float vAlpha;
+          varying vec3 vColor;
+          void main() {
+            vColor = aColor;
+            vec3 pos = position;
+            float phase = aSeed.x;
+            float speed = aSeed.y;
+            float drift = aSeed.w;
+
+            // Flotación suave y orgánica como granos de arena mágica suspendidos en el aire
+            float localY = mod((pos.y - uMinY) + uTime * speed * 0.32, uSpanY);
+            pos.y = uMinY + localY + sin(uTime * 1.1 + phase * 2.0) * 0.06;
+
+            float swirl = uTime * 0.42 + phase + localY * 0.55;
+            pos.x += cos(swirl) * drift;
+            pos.z += sin(swirl) * drift;
+
+            float heightFade = smoothstep(0.0, 0.28, localY) * (1.0 - smoothstep(uSpanY * 0.78, uSpanY, localY));
+            float sparkle = 0.42 + 0.58 * pow(0.5 + 0.5 * sin(uTime * 4.2 + phase * 5.0), 2.0);
+            vAlpha = heightFade * sparkle * uIntensity;
+
+            vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+            gl_Position = projectionMatrix * mvPosition;
+            gl_PointSize = clamp((aSeed.z * uPixelRatio) / max(-mvPosition.z, 0.48), 1.5, 16.0);
+          }
+        `,
+        fragmentShader: `
+          varying float vAlpha;
+          varying vec3 vColor;
+          void main() {
+            if (vAlpha < 0.01) discard;
+            vec2 p = (gl_PointCoord - vec2(0.5)) * 2.0;
+            float d = length(p);
+            float grain = exp(-d * d * 8.5);
+            float glint = max(0.0, 1.0 - abs(p.x * p.y) * 22.0) * exp(-d * d * 3.5);
+            float a = (grain * 0.85 + glint * 0.40) * vAlpha;
+            if (a < 0.01) discard;
+            vec3 col = mix(vColor, vec3(1.0, 0.99, 0.90), grain * 0.6);
+            gl_FragColor = vec4(col * 1.35, a);
+          }
+        `
+      });
+
+      magicSandPoints = new THREE.Points(geo, magicSandMat);
+      magicSandPoints.frustumCulled = false;
+      magicSandPoints.visible = false;
+      magicSandPoints.renderOrder = 3;
+      interiorGroup.add(magicSandPoints);
     }
 
     function fixCorridorMaterial(mat, maxAnisotropy) {
@@ -1388,6 +1505,26 @@
       if (isCutout) { mat.transparent = false; mat.alphaTest = 0.42; mat.depthWrite = true; mat.side = THREE.DoubleSide; }
       else { mat.transparent = false; mat.alphaTest = 0; mat.depthWrite = true; mat.side = THREE.FrontSide; }
       ['map', 'normalMap', 'roughnessMap', 'metalnessMap'].forEach((mapKey) => { if (mat[mapKey]) mat[mapKey].anisotropy = maxAnisotropy; });
+    }
+
+    // Raycast auxiliar sobre la superficie superior real del suelo del pasillo
+    function sampleFloorSurfaceY(meshes, x, z, fallbackY = 0) {
+      if (!meshes || meshes.length === 0) return fallbackY;
+      const rc = new THREE.Raycaster(new THREE.Vector3(x, 3.2, z), new THREE.Vector3(0, -1, 0), 0, 8.0);
+      const hits = rc.intersectObjects(meshes, false);
+      for (const h of hits) {
+        if (h.point.y < 1.8) return h.point.y;
+      }
+      return fallbackY;
+    }
+
+    // Raycast auxiliar hacia el muro izquierdo interior
+    function sampleLeftWallInnerX(meshes, z, fallbackX) {
+      if (!meshes || meshes.length === 0) return fallbackX;
+      const rc = new THREE.Raycaster(new THREE.Vector3(0, 1.05, z), new THREE.Vector3(-1, 0, 0), 0.1, 6.0);
+      const hits = rc.intersectObjects(meshes, false);
+      if (hits.length > 0) return hits[0].point.x;
+      return fallbackX;
     }
 
     async function loadModelsParallel() {
@@ -1417,36 +1554,81 @@
           loadWithProgress(MODELS.gyroscope, 'gyroscope')
         ]);
 
-        // 1. PASILLO
+        // 1. PASILLO (Alineado a la cara SUPERIOR caminable del suelo)
         const corridor = gltfCorridor.scene;
         corridor.scale.setScalar(5.2);
         corridor.updateMatrixWorld(true);
-        const pisoSlabBox = new THREE.Box3(); const wallBox = new THREE.Box3();
-        let hasPisoSlab = false; let hasWallMesh = false;
+
+        const pisoSlabBox = new THREE.Box3();
+        const wallBox = new THREE.Box3();
+        const pisoMeshes = [];
+        const wallMeshes = [];
+        const allCorridorMeshes = [];
+        let hasPisoSlab = false;
+        let hasWallMesh = false;
+
         corridor.traverse((node) => {
           if (node.isMesh) {
-            const mName = (node.name || '').toLowerCase(); const matName = (node.material?.name || '').toLowerCase();
-            if (mName.includes('pisoceart') || matName.includes('pisoceart')) { pisoSlabBox.expandByObject(node); hasPisoSlab = true; }
-            if (mName.includes('muro') || matName.includes('murocear')) { wallBox.expandByObject(node); hasWallMesh = true; }
+            allCorridorMeshes.push(node);
+            const mName = (node.name || '').toLowerCase();
+            const matName = (node.material?.name || '').toLowerCase();
+            if (mName.includes('pisoceart') || matName.includes('pisoceart') || mName.includes('piso')) {
+              pisoSlabBox.expandByObject(node);
+              pisoMeshes.push(node);
+              hasPisoSlab = true;
+            }
+            if (mName.includes('muro') || matName.includes('murocear') || mName.includes('pared')) {
+              wallBox.expandByObject(node);
+              wallMeshes.push(node);
+              hasWallMesh = true;
+            }
           }
         });
+
         const fullCorrBox = new THREE.Box3().setFromObject(corridor);
         const refCenter = hasWallMesh ? wallBox.getCenter(new THREE.Vector3()) : fullCorrBox.getCenter(new THREE.Vector3());
-        const exactFloorY = hasPisoSlab ? pisoSlabBox.min.y : fullCorrBox.min.y;
         const entranceZ = hasWallMesh ? wallBox.max.z : fullCorrBox.max.z;
         const backZ = hasWallMesh ? wallBox.min.z : fullCorrBox.min.z;
-        corridor.position.set(-refCenter.x, -exactFloorY, -entranceZ);
-        corridor.updateMatrixWorld(true);
         totalCorridorLength = Math.abs(entranceZ - backZ);
         const corridorWidth = hasWallMesh ? (wallBox.max.x - wallBox.min.x) : (fullCorrBox.max.x - fullCorrBox.min.x);
 
-        // Localizar la reja del fondo ya posicionada
+        // Posicionamiento horizontal inicial + base temporal del piso
+        const slabHeight = hasPisoSlab ? (pisoSlabBox.max.y - pisoSlabBox.min.y) : 0;
+        const initialFloorRefY = (hasPisoSlab && slabHeight > 0 && slabHeight < 1.2)
+          ? pisoSlabBox.max.y
+          : (hasPisoSlab ? pisoSlabBox.min.y : fullCorrBox.min.y);
+
+        corridor.position.set(-refCenter.x, -initialFloorRefY, -entranceZ);
+        corridor.updateMatrixWorld(true);
+
+        // Afinar la superficie exacta del suelo caminable mediante raycast descendente
+        const floorTargets = pisoMeshes.length > 0 ? pisoMeshes : allCorridorMeshes;
+        const floorSamples = [
+          sampleFloorSurfaceY(floorTargets, 0, -(totalCorridorLength * 0.25), null),
+          sampleFloorSurfaceY(floorTargets, 0, -(totalCorridorLength * 0.50), null),
+          sampleFloorSurfaceY(floorTargets, 0, -(totalCorridorLength * 0.68), null)
+        ].filter((v) => v !== null && Math.abs(v) < 1.8);
+
+        if (floorSamples.length > 0) {
+          floorSamples.sort((a, b) => a - b);
+          const medianFloorY = floorSamples[Math.floor(floorSamples.length / 2)];
+          corridor.position.y -= medianFloorY;
+          corridor.updateMatrixWorld(true);
+        }
+
+        // Localizar reja y/o puerta del fondo con el pasillo ya nivelado al suelo y = 0
         const rejaBox = new THREE.Box3();
+        const puertaBox = new THREE.Box3();
         let hasReja = false;
+        let hasPuerta = false;
         corridor.traverse((node) => {
           if (node.isMesh) {
             const mName = (node.name || '').toLowerCase();
             const matName = (node.material?.name || '').toLowerCase();
+            if (mName.includes('puerta') || matName.includes('puerta')) {
+              puertaBox.expandByObject(node);
+              hasPuerta = true;
+            }
             if (mName.includes('reja') || matName.includes('reja')) {
               rejaBox.expandByObject(node);
               hasReja = true;
@@ -1454,7 +1636,7 @@
           }
         });
 
-        // 2. ESCULTURA FELINA (Más pegada a la pared izquierda y ligeramente más atrás: 68%)
+        // 2. ESCULTURA FELINA (Apoyada sobre la superficie superior del suelo del pasillo, sin cortar manos ni patas)
         const sculpture = gltfSculpture.scene;
         sculptureGroup = sculpture;
         sculpture.scale.setScalar(2.6);
@@ -1463,22 +1645,31 @@
         const sculpBox = new THREE.Box3().setFromObject(sculpture);
         const sculpCenter = sculpBox.getCenter(new THREE.Vector3());
         const sculpRawSize = sculpBox.getSize(new THREE.Vector3());
+        const sculptureZ = -(totalCorridorLength * 0.68);
 
-        // Borde izquierdo interior ajustado para acercarla más al muro izquierdo sin atravesarlo
-        let innerLeftWallX = -2.02;
+        // Calcular borde interior real del muro izquierdo para evitar que manos o patas se corten con la pared
+        let fallbackLeftWallX = -2.0;
         if (hasPisoSlab) {
           const pisoW = pisoSlabBox.max.x - pisoSlabBox.min.x;
           if (pisoW >= 2.2 && pisoW <= 6.5) {
-            innerLeftWallX = (pisoSlabBox.min.x + corridor.position.x) - 0.14;
+            fallbackLeftWallX = pisoSlabBox.min.x + corridor.position.x;
           }
         }
+        const detectedLeftWallX = sampleLeftWallInnerX(wallMeshes, sculptureZ, fallbackLeftWallX);
         const lateralOffset = THREE.MathUtils.clamp(
-          innerLeftWallX + (sculpRawSize.x * 0.44),
-          -2.28,
-          -1.66
+          detectedLeftWallX + (sculpRawSize.x * 0.50) + 0.12,
+          -2.10,
+          -1.15
         );
-        const sculptureZ = -(totalCorridorLength * 0.68);
 
+        // Medir altura exacta del suelo justo debajo de la posición de la escultura
+        const floorYUnderSculpture = Math.max(
+          sampleFloorSurfaceY(floorTargets, lateralOffset, sculptureZ, 0.0),
+          sampleFloorSurfaceY(floorTargets, lateralOffset + 0.28, sculptureZ, 0.0),
+          0.0
+        );
+
+        // Obtener vértice más bajo real de toda la escultura
         let lowestVisibleY = Infinity;
         sculpture.traverse((child) => {
           if (child.isMesh && child.visible) {
@@ -1494,36 +1685,20 @@
         });
         if (lowestVisibleY === Infinity) lowestVisibleY = sculpBox.min.y;
 
+        // Colocarla limpiamente sobre el suelo del pasillo con holgura (+0.07 m) para que patas y manos luzcan íntegras
         sculpture.position.set(
           -sculpCenter.x + lateralOffset,
-          -lowestVisibleY + 0.02,
+          (floorYUnderSculpture - lowestVisibleY) + 0.07,
           sculptureZ - sculpCenter.z
         );
         sculpture.updateMatrixWorld(true);
 
         sculptureLocalBox.setFromObject(sculpture);
         sculptureLocalBox.getCenter(sculptureCenterLocal);
-        const sculpSize = sculptureLocalBox.getSize(new THREE.Vector3());
-        sculptureOrbitRadius = Math.max(0.70, Math.max(sculpSize.x, sculpSize.z) * 0.48 + 0.30);
+        sculptureLocalBox.getSize(sculptureSizeLocal);
+        sculptureOrbitRadius = Math.max(0.72, Math.max(sculptureSizeLocal.x, sculptureSizeLocal.z) * 0.50 + 0.30);
 
-        const seenSculpMats = new Set();
-        sculpture.traverse((node) => {
-          if (node.isMesh && node.material) {
-            const mats = Array.isArray(node.material) ? node.material : [node.material];
-            mats.forEach((mat) => {
-              if (!seenSculpMats.has(mat) && 'emissive' in mat) {
-                seenSculpMats.add(mat);
-                sculptureMaterialStates.push({
-                  mat,
-                  baseEmissive: mat.emissive.clone(),
-                  baseIntensity: mat.emissiveIntensity || 0
-                });
-              }
-            });
-          }
-        });
-
-        // Anclar Audio 3 (Posicional 3D) directamente en el centro de la escultura
+        // Anclar Audio 3 (audio_escultura.mp3 posicional 3D) directamente en el centro de la escultura
         if (narrationTracks.awaken.audio) {
           const audioAnchor = new THREE.Object3D();
           audioAnchor.position.copy(sculptureCenterLocal);
@@ -1531,15 +1706,15 @@
           audioAnchor.add(narrationTracks.awaken.audio);
         }
 
-        sculptureLight = new THREE.PointLight(0xfef08a, 2.4, 14);
-        sculptureLight.position.set(lateralOffset + 0.55, 2.2, sculptureZ + 1.35);
+        sculptureLight = new THREE.PointLight(0xfef3c7, 2.3, 14);
+        sculptureLight.position.set(lateralOffset + 0.65, sculptureLocalBox.max.y + 0.35, sculptureZ + 1.35);
 
-        sculptureAwakenLight = new THREE.PointLight(0xfde047, 0.0, 12);
-        sculptureAwakenLight.position.set(sculptureCenterLocal.x + 0.32, sculptureCenterLocal.y + 0.4, sculptureCenterLocal.z + 0.35);
-
-        // 3. GIROSCOPIO DORADO (40 cm, detrás de la reja del fondo + halo luminoso)
+        // 3. GIROSCOPIO DORADO (40 cm, detrás de la reja del fondo, con brillo moderado para lucir su forma)
         const sharedHaloTexture = createGoldenHaloTexture();
         gyroGroup = new THREE.Group();
+        gyroAimPivot = new THREE.Group();
+        gyroGroup.add(gyroAimPivot);
+
         gyroModel = gltfGyro.scene;
         const rawGyroBox = new THREE.Box3().setFromObject(gyroModel);
         const rawGyroSize = rawGyroBox.getSize(new THREE.Vector3());
@@ -1551,19 +1726,20 @@
         const centeredGyroBox = new THREE.Box3().setFromObject(gyroModel);
         const centeredGyroCenter = centeredGyroBox.getCenter(new THREE.Vector3());
         gyroModel.position.sub(centeredGyroCenter);
-        gyroGroup.add(gyroModel);
+        gyroAimPivot.add(gyroModel);
 
+        // Halo muy contenido para no opacar los detalles del artefacto
         const haloMat = new THREE.SpriteMaterial({
           map: sharedHaloTexture,
-          color: 0xfef08a,
+          color: 0xfde68a,
           transparent: true,
-          opacity: 0.42,
+          opacity: 0.18,
           blending: THREE.AdditiveBlending,
           depthWrite: false
         });
         gyroHaloSprite = new THREE.Sprite(haloMat);
-        gyroHaloSprite.scale.setScalar(0.75);
-        gyroHaloSprite.renderOrder = 4;
+        gyroHaloSprite.scale.setScalar(0.50);
+        gyroHaloSprite.renderOrder = 3;
         gyroGroup.add(gyroHaloSprite);
 
         const hitGeo = new THREE.SphereGeometry(0.55, 12, 12);
@@ -1571,7 +1747,7 @@
         gyroHitSphere = new THREE.Mesh(hitGeo, hitMat);
         gyroGroup.add(gyroHitSphere);
 
-        gyroLight = new THREE.PointLight(0xfacc15, 1.3, 5.2);
+        gyroLight = new THREE.PointLight(0xfbbf24, 0.85, 4.6);
         gyroGroup.add(gyroLight);
 
         const seenGyroMats = new Set();
@@ -1582,32 +1758,53 @@
               if (!seenGyroMats.has(mat) && 'emissive' in mat) {
                 seenGyroMats.add(mat);
                 mat.emissive.copy(_goldColor);
-                mat.emissiveIntensity = 0.32;
+                mat.emissiveIntensity = 0.16;
                 gyroMaterials.push(mat);
               }
             });
           }
         });
 
-        // Posición detrás de la reja del fondo y ubicación del resplandor inferior tras los barrotes
-        const beaconAnchor = new THREE.Vector3();
+        // Posición detrás de la reja y coordenadas del marco luminoso de la puerta
+        let frameX = 0;
+        let frameBottomY = 0.02;
+        let frameZ = -(totalCorridorLength - 0.08);
+        let frameW = 1.28;
+        let frameH = 2.28;
+
+        if (hasPuerta) {
+          const pCenter = puertaBox.getCenter(new THREE.Vector3());
+          const pSize = puertaBox.getSize(new THREE.Vector3());
+          frameX = pCenter.x;
+          frameBottomY = Math.max(0.02, puertaBox.min.y);
+          frameZ = puertaBox.max.z + 0.06;
+          frameW = THREE.MathUtils.clamp(pSize.x, 0.95, 1.85);
+          frameH = THREE.MathUtils.clamp(pSize.y, 1.95, 2.75);
+        } else if (hasReja) {
+          const rejaCenter = rejaBox.getCenter(new THREE.Vector3());
+          const rejaSize = rejaBox.getSize(new THREE.Vector3());
+          frameX = rejaCenter.x;
+          frameBottomY = 0.02;
+          frameZ = rejaBox.max.z + 0.06;
+          frameW = THREE.MathUtils.clamp(rejaSize.x * 0.44, 1.08, 1.55);
+          frameH = THREE.MathUtils.clamp(rejaSize.y * 0.70, 2.08, 2.55);
+        }
+
         if (hasReja) {
           const rejaCenter = rejaBox.getCenter(new THREE.Vector3());
-          const behindRejaX = THREE.MathUtils.lerp(rejaCenter.x, rejaBox.max.x, 0.38);
-          const behindRejaZ = rejaBox.min.z - 0.55;
-          gyroRestPosition.set(behindRejaX, 0.42, behindRejaZ);
-          beaconAnchor.set(THREE.MathUtils.lerp(rejaCenter.x, behindRejaX, 0.55), 0, rejaBox.min.z - 0.35);
+          const behindRejaX = THREE.MathUtils.lerp(rejaCenter.x, rejaBox.max.x, 0.36);
+          const behindRejaZ = rejaBox.min.z - 0.58;
+          gyroRestPosition.set(behindRejaX, 0.55, behindRejaZ);
         } else {
           const rightCornerX = THREE.MathUtils.clamp((corridorWidth * 0.5) - 0.75, 0.75, 1.35);
-          const behindBackZ = -(totalCorridorLength + 0.55);
-          gyroRestPosition.set(rightCornerX, 0.42, behindBackZ);
-          beaconAnchor.set(rightCornerX * 0.55, 0, -(totalCorridorLength + 0.35));
+          const behindBackZ = -(totalCorridorLength + 0.58);
+          gyroRestPosition.set(rightCornerX, 0.55, behindBackZ);
         }
         gyroGroup.position.copy(gyroRestPosition);
 
-        interiorGroup.add(corridor, sculpture, sculptureLight, sculptureAwakenLight, gyroGroup);
-        setupGateLowerBeacon(beaconAnchor, sharedHaloTexture);
-        setupAwakeningParticles(sculptureCenterLocal, sculptureOrbitRadius, sculpSize.y);
+        interiorGroup.add(corridor, sculpture, sculptureLight, gyroGroup);
+        setupGateDoorFrame(frameX, frameBottomY, frameZ, frameW, frameH);
+        setupMagicSandParticles(sculptureCenterLocal, sculptureOrbitRadius, sculptureLocalBox.min.y, sculptureSizeLocal.y);
 
         const combinedBox = new THREE.Box3().setFromObject(interiorGroup);
         maxRevealHeight = Math.max(10.5, combinedBox.max.y + 0.6);
@@ -1618,7 +1815,8 @@
         const processedMaterials = new Set();
         interiorGroup.traverse((node) => {
           node.frustumCulled = false;
-          if (node.isMesh && node.material && node !== gyroHitSphere && node !== gateFloorGlowMesh) {
+          const isGateFrameMesh = gateDoorFrameGroup && gateDoorFrameGroup.children.includes(node);
+          if (node.isMesh && node.material && node !== gyroHitSphere && !isGateFrameMesh) {
             const mats = Array.isArray(node.material) ? node.material : [node.material];
             mats.forEach((mat) => {
               if (!processedMaterials.has(mat)) {
@@ -1646,24 +1844,23 @@
       }
     }
 
-    function checkFirstStepTrigger() {
-      if (hasTriggeredFirstStep || isMaterializing || !stepOriginReady) return;
+    // Dispara intro.mp3 cuando el usuario llega aproximadamente a medio pasillo
+    function checkMidCorridorIntroTrigger() {
+      if (hasTriggeredMidCorridor || isMaterializing) return;
 
       const activeCam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
-      const walkDist = Math.hypot(
-        currentWalkOffset.x - stepOriginWalk.x,
-        currentWalkOffset.z - stepOriginWalk.z
-      );
-      const physicalDist = Math.hypot(
-        activeCam.position.x - stepOriginCam.x,
-        activeCam.position.z - stepOriginCam.z
-      );
+      activeCam.getWorldPosition(_camLocalPos);
+      interiorGroup.worldToLocal(_camLocalPos);
 
-      if (walkDist >= 0.45 || physicalDist >= 0.45) {
-        hasTriggeredFirstStep = true;
-        playNarrativeTrack('step');
-        statusText.textContent = 'Recorrido iniciado · Sigue el resplandor detrás de la reja';
-        showToast('✨ El arte es una magia que disuelve las horas...');
+      // El pasillo se extiende desde z = 0 (entrada) hacia z = -totalCorridorLength (fondo)
+      const depthInCorridor = -_camLocalPos.z;
+      const midCorridorThreshold = totalCorridorLength * 0.42;
+
+      if (depthInCorridor >= midCorridorThreshold) {
+        hasTriggeredMidCorridor = true;
+        playNarrativeTrack('intro');
+        statusText.textContent = 'Explora el pasillo · Cruza la puerta brillante de la reja';
+        showToast('✨ Escuchando introducción...');
       }
     }
 
@@ -1682,21 +1879,21 @@
       carryingMode = null;
       carryingController = null;
 
-      if (awakenParticles) awakenParticles.visible = true;
-      triggerSnapBurst(gyroGroup.position);
+      initTransferTargets();
+      if (magicSandPoints) magicSandPoints.visible = true;
 
       playAwakeningChord();
       playNarrativeTrack('awaken');
 
       statusDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-300 shadow-[0_0_12px_#fcd34d]';
-      statusText.textContent = 'Escultura despierta · Escuchando a Leonora Carrington';
-      showToast('✨ La escultura despierta · Escucha el relato', 4800);
+      statusText.textContent = 'Esencia transferida · Escuchando a la escultura';
+      showToast('✨ La esencia de la vida despierta la escultura', 4800);
     }
 
     function updateArtifactAndAwakening(dt, timeSec) {
-      if (!gyroGroup || !gyroModel) return;
+      if (!gyroGroup || !gyroModel || !gyroAimPivot) return;
 
-      updateGateLowerBeacon(dt, timeSec);
+      updateGateDoorFrame(dt, timeSec);
 
       if (renderer.xr.isPresenting && artifactState === ARTIFACT_STATE.EXPLORACION) {
         for (let i = 0; i < controllers.length; i++) {
@@ -1712,21 +1909,22 @@
           gyroRestPosition.y + Math.sin(timeSec * 1.9) * 0.055,
           gyroRestPosition.z
         );
+        gyroAimPivot.quaternion.identity();
         gyroModel.rotation.y += dt * 0.95;
         gyroModel.rotation.x = Math.sin(timeSec * 1.2) * 0.18;
-        const pulse = 0.5 + 0.5 * Math.sin(timeSec * 2.6);
-        gyroLight.intensity = 1.1 + pulse * 1.05;
-        gyroLight.distance = 5.6;
+
+        const pulse = 0.5 + 0.5 * Math.sin(timeSec * 2.4);
+        gyroLight.intensity = 0.72 + pulse * 0.42;
+        gyroLight.distance = 4.6;
         if (gyroHaloSprite) {
-          gyroHaloSprite.material.opacity = 0.40 + pulse * 0.26;
-          gyroHaloSprite.scale.setScalar(0.76 + pulse * 0.16);
+          gyroHaloSprite.material.opacity = 0.16 + pulse * 0.10;
+          gyroHaloSprite.scale.setScalar(0.48 + pulse * 0.07);
         }
         for (const mat of gyroMaterials) {
           mat.emissive.copy(_goldColor);
-          mat.emissiveIntensity = 0.34 + pulse * 0.38;
+          mat.emissiveIntensity = 0.14 + pulse * 0.12;
         }
-        updateGyroTrail(dt, timeSec, null);
-        updateSnapBurst(dt);
+        updateGyroTrail(dt, timeSec, gyroGroup.position, 0.042);
         return;
       }
 
@@ -1734,110 +1932,111 @@
         if (carryingMode === 'xr' && carryingController) {
           carryingController.getWorldPosition(_tempVecA);
           _tempMatrix.identity().extractRotation(carryingController.matrixWorld);
-          _tempVecB.set(0, 0.05, -0.18).applyMatrix4(_tempMatrix);
+          _tempVecB.set(0, 0.05, -0.22).applyMatrix4(_tempMatrix);
           _tempVecA.add(_tempVecB);
         } else {
           const activeCam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
-          _tempVecA.set(0.28, -0.22, -0.68).applyMatrix4(activeCam.matrixWorld);
+          _tempVecA.set(0.24, -0.20, -0.74).applyMatrix4(activeCam.matrixWorld);
         }
 
         interiorGroup.worldToLocal(_tempVecA);
-        gyroGroup.position.lerp(_tempVecA, Math.min(1, dt * 11.0));
 
+        // Comportamiento magnético: el objeto tira suavemente hacia la escultura y se orienta buscándola
+        _magDir.subVectors(sculptureCenterLocal, _tempVecA);
+        const rawDist = _magDir.length();
         const distMeters = sculptureLocalBox.distanceToPoint(gyroGroup.position);
-        const proximity = THREE.MathUtils.clamp(1.0 - (distMeters - 0.5) / 7.5, 0.0, 1.0);
+        const proximity = THREE.MathUtils.clamp(1.0 - (distMeters - 0.65) / 8.0, 0.0, 1.0);
 
-        const spinSpeed = 1.8 + proximity * 10.5;
-        gyroModel.rotation.y += dt * spinSpeed;
-        gyroModel.rotation.x += dt * (0.6 + proximity * 4.2);
-        gyroModel.rotation.z += dt * (0.3 + proximity * 2.5);
+        if (rawDist > 0.001) {
+          _magDir.divideScalar(rawDist);
+          // Tracción magnética proporcional a la cercanía + ligera vibración de búsqueda
+          const pullMeters = Math.min(rawDist * 0.35, 0.14 + proximity * 0.26 + Math.sin(timeSec * 4.5) * 0.018);
+          _tempVecA.addScaledVector(_magDir, pullMeters);
+        }
 
-        const compassPulse = 0.5 + 0.5 * Math.sin(timeSec * (3.5 + proximity * 11.0));
-        gyroLight.intensity = 1.2 + proximity * 3.4 + compassPulse * (0.4 + proximity * 1.1);
-        gyroLight.distance = 5.5 + proximity * 3.0;
+        gyroGroup.position.lerp(_tempVecA, Math.min(1, dt * 8.5));
+
+        // Orientación magnética: apunta constantemente hacia el centro de la escultura como brújula viva
+        _aimMatrix.lookAt(sculptureCenterLocal, gyroGroup.position, _upVec);
+        _targetQuat.setFromRotationMatrix(_aimMatrix);
+        gyroAimPivot.quaternion.slerp(_targetQuat, Math.min(1, dt * 7.5));
+
+        // Rotación axial visible mientras apunta a la escultura
+        const spinSpeed = 1.6 + proximity * 6.5;
+        gyroModel.rotation.z += dt * spinSpeed;
+        gyroModel.rotation.y += dt * (0.45 + proximity * 1.4);
+
+        const compassPulse = 0.5 + 0.5 * Math.sin(timeSec * (3.2 + proximity * 9.0));
+        gyroLight.intensity = 0.85 + proximity * 0.65 + compassPulse * 0.22;
+        gyroLight.distance = 5.0 + proximity * 1.8;
         if (gyroHaloSprite) {
-          gyroHaloSprite.material.opacity = 0.42 + proximity * 0.40 + compassPulse * 0.14;
-          gyroHaloSprite.scale.setScalar(0.78 + proximity * 0.35 + compassPulse * 0.12);
+          gyroHaloSprite.material.opacity = 0.16 + proximity * 0.12 + compassPulse * 0.06;
+          gyroHaloSprite.scale.setScalar(0.50 + proximity * 0.10 + compassPulse * 0.04);
         }
         for (const mat of gyroMaterials) {
-          mat.emissive.copy(_goldColor).lerp(_goldIncandescent, proximity * 0.55);
-          mat.emissiveIntensity = 0.42 + proximity * 1.45 + compassPulse * 0.35;
+          mat.emissive.copy(_goldColor).lerp(_goldWarm, proximity * 0.35);
+          mat.emissiveIntensity = 0.16 + proximity * 0.22 + compassPulse * 0.08;
         }
 
-        if (carryingController && distMeters < 2.0 && (timeSec - lastHapticTime) > (0.45 - proximity * 0.25)) {
+        if (carryingController && distMeters < 2.2 && (timeSec - lastHapticTime) > (0.45 - proximity * 0.25)) {
           lastHapticTime = timeSec;
           triggerHaptic(carryingController, 0.15 + proximity * 0.35, 40);
         }
 
-        updateGyroTrail(dt, timeSec, null);
-        updateSnapBurst(dt);
+        // Estela sutil al flotar y desplazarse hacia la escultura
+        updateGyroTrail(dt, timeSec, gyroGroup.position, 0.018);
 
-        if (distMeters <= 0.50) {
+        if (distMeters <= 0.65) {
           activateSculptureAwakening();
         }
         return;
       }
 
       if (artifactState === ARTIFACT_STATE.ACTIVADO) {
-        // Órbita suave desplazada ligeramente hacia el pasillo (+X) para no sumergirse en la pared izquierda
-        orbitAngle += dt * 0.54;
-        const orbitCenterX = sculptureCenterLocal.x + 0.16;
+        awakeningElapsed += dt;
+
+        // Órbita elegante alrededor de la escultura (desplazada +X para no tocar la pared izquierda)
+        orbitAngle += dt * 0.52;
+        const orbitCenterX = sculptureCenterLocal.x + 0.18;
         const targetX = orbitCenterX + Math.cos(orbitAngle) * sculptureOrbitRadius;
         const targetZ = sculptureCenterLocal.z + Math.sin(orbitAngle) * sculptureOrbitRadius;
-        const targetY = sculptureCenterLocal.y + 0.18 + Math.sin(timeSec * 1.4) * 0.15;
+        const targetY = sculptureCenterLocal.y + 0.22 + Math.sin(timeSec * 1.35) * 0.14;
 
         _tempVecA.set(targetX, targetY, targetZ);
-        gyroGroup.position.lerp(_tempVecA, Math.min(1, dt * 3.2));
+        gyroGroup.position.lerp(_tempVecA, Math.min(1, dt * 3.0));
 
-        gyroModel.rotation.y += dt * 2.6;
-        gyroModel.rotation.x += dt * 1.05;
+        // Mantiene su orientación hacia la escultura mientras gira nítidamente
+        _aimMatrix.lookAt(sculptureCenterLocal, gyroGroup.position, _upVec);
+        _targetQuat.setFromRotationMatrix(_aimMatrix);
+        gyroAimPivot.quaternion.slerp(_targetQuat, Math.min(1, dt * 4.5));
 
-        updateGyroTrail(dt, timeSec, gyroGroup.position);
-        updateSnapBurst(dt);
+        gyroModel.rotation.z += dt * 2.2;
+        gyroModel.rotation.y += dt * 0.95;
 
-        const breath = 0.5 + 0.5 * Math.sin(timeSec * 2.6);
-        gyroLight.intensity = 3.6 + breath * 1.3;
-        gyroLight.distance = 9.2;
+        // Estela conservada con brillo controlado para distinguir claramente el giroscopio y su movimiento
+        updateGyroTrail(dt, timeSec, gyroGroup.position, 0.015);
+
+        // Flujo de esencia luminosa del giroscopio hacia la escultura
+        updateTransferStream(dt, timeSec, gyroGroup.position);
+
+        const breath = 0.5 + 0.5 * Math.sin(timeSec * 2.2);
+        gyroLight.intensity = 1.05 + breath * 0.35;
+        gyroLight.distance = 6.2;
         if (gyroHaloSprite) {
-          gyroHaloSprite.material.opacity = 0.78 + breath * 0.20;
-          gyroHaloSprite.scale.setScalar(1.12 + breath * 0.22);
+          gyroHaloSprite.material.opacity = 0.20 + breath * 0.08;
+          gyroHaloSprite.scale.setScalar(0.54 + breath * 0.07);
         }
         for (const mat of gyroMaterials) {
-          mat.emissive.copy(_goldIncandescent);
-          mat.emissiveIntensity = 1.85 + breath * 0.55;
+          mat.emissive.copy(_goldWarm);
+          mat.emissiveIntensity = 0.24 + breath * 0.12;
         }
 
-        // Brillo temporal de la escultura (~6.5s)
-        awakeningElapsed += dt;
-        let glowFactor = 0.0;
-        if (awakeningElapsed < 1.5) {
-          const t = awakeningElapsed / 1.5;
-          glowFactor = 1.0 - Math.pow(1.0 - t, 3);
-        } else if (awakeningElapsed < 4.5) {
-          glowFactor = 1.0;
-        } else if (awakeningElapsed < 6.5) {
-          const t = (awakeningElapsed - 4.5) / 2.0;
-          glowFactor = Math.pow(1.0 - t, 2);
-        } else {
-          glowFactor = 0.0;
-        }
-
-        if (sculptureAwakenLight) {
-          sculptureAwakenLight.intensity = glowFactor * (5.2 + breath * 1.2);
-        }
-        if (sculptureLight) {
-          sculptureLight.intensity = 2.4 + glowFactor * 1.8;
-        }
-
-        for (const state of sculptureMaterialStates) {
-          state.mat.emissive.copy(state.baseEmissive).lerp(_goldColor, glowFactor * 0.85);
-          state.mat.emissiveIntensity = state.baseIntensity + glowFactor * (0.55 + breath * 0.16);
-        }
-
-        if (awakenParticleMat && awakenParticles) {
-          awakenParticleMat.uniforms.uTime.value = timeSec;
-          awakenParticleMat.uniforms.uIntensity.value = glowFactor * 0.95;
-          awakenParticles.visible = glowFactor > 0.005;
+        // La escultura NO brilla; en cambio, la envuelve permanentemente arena mágica luminosa flotante
+        if (magicSandMat && magicSandPoints) {
+          const sandRamp = THREE.MathUtils.smoothstep(awakeningElapsed, 0.45, 2.4);
+          magicSandMat.uniforms.uTime.value = timeSec;
+          magicSandMat.uniforms.uIntensity.value = sandRamp * (0.86 + breath * 0.14);
+          magicSandPoints.visible = sandRamp > 0.005;
         }
       }
     }
@@ -1846,7 +2045,6 @@
       renderer.localClippingEnabled = true;
       isMaterializing = true;
       materializationT = 0;
-      stepOriginReady = false;
       clippingPlane.constant = hallAnchorGroup.position.y + 0.05;
 
       leafParticles.visible = true;
@@ -1922,6 +2120,7 @@
       });
 
       window.addEventListener('keydown', (e) => {
+        unlockAudio();
         const k = e.key.toLowerCase();
         if (k === 'w' || e.key === 'ArrowUp') keysPressed.forward = true;
         if (k === 's' || e.key === 'ArrowDown') keysPressed.back = true;
@@ -2017,7 +2216,7 @@
         hallAnchorGroup.position.set(0, 0, 0); hallAnchorGroup.visible = true;
         targetWalkOffset.set(0, 0, 0); currentWalkOffset.set(0, 0, 0);
         if (artifactState === ARTIFACT_STATE.EXPLORACION) {
-          hasTriggeredFirstStep = false;
+          hasTriggeredMidCorridor = false;
         }
         triggerMaterializationWave();
         session.addEventListener('end', () => {
@@ -2068,13 +2267,8 @@
           leafParticles.visible = false;
           fireflies.visible = true;
 
-          const activeCam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
-          stepOriginWalk.copy(currentWalkOffset);
-          stepOriginCam.copy(activeCam.position);
-          stepOriginReady = true;
-
-          if (artifactState === ARTIFACT_STATE.EXPLORACION && !hasTriggeredFirstStep) {
-            statusText.textContent = 'Pasillo materializado · Da un paso para comenzar';
+          if (artifactState === ARTIFACT_STATE.EXPLORACION && !hasTriggeredMidCorridor) {
+            statusText.textContent = 'Pasillo materializado · Avanza hacia la puerta brillante';
           }
         }
       } else if (leafParticles && leafParticles.visible) {
@@ -2086,7 +2280,7 @@
         fireflyMaterial.uniforms.uTime.value = timeSec;
       }
 
-      checkFirstStepTrigger();
+      checkMidCorridorIntroTrigger();
       updateArtifactAndAwakening(dt, timeSec);
 
       renderer.render(scene, camera);
